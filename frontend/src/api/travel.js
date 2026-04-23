@@ -24,6 +24,8 @@ export const getAttractions = (params) =>
 
 export const createPlan = (payload) => api.post('/plans', payload).then((response) => response.data)
 
+export const createAiPlan = (payload) => api.post('/ai/plans', payload).then((response) => response.data)
+
 export const getSavedPlans = () => api.get('/plans').then((response) => response.data)
 
 export const getSavedPlan = (id) => api.get(`/plans/${id}`).then((response) => response.data)

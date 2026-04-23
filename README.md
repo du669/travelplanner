@@ -22,6 +22,7 @@
 - `GET /api/destinations`：目的地列表
 - `GET /api/attractions?city=Shanghai&interests=culture&interests=walk`：景点列表
 - `POST /api/plans`：生成旅行计划
+- `POST /api/ai/plans`：使用 AI 生成结构化旅行计划
 - `GET /api/plans`：最近保存的旅行计划
 - `GET /api/plans/{id}`：读取某个已保存旅行计划
 
@@ -83,6 +84,28 @@ npm run dev
 ```
 
 浏览器访问 `http://localhost:5173`。
+
+## AI 结构化规划接入
+
+后端已预留 OpenAI 兼容接口的接入方式，新增接口：
+
+- `POST /api/ai/plans`
+
+需要提供以下配置：
+
+```properties
+TRAVEL_AI_ENABLED=true
+TRAVEL_AI_BASE_URL=https://api.openai.com/v1
+TRAVEL_AI_API_KEY=你的密钥
+TRAVEL_AI_MODEL=gpt-4.1-mini
+```
+
+说明：
+
+- 后端会要求模型返回固定 JSON 结构
+- 模型只负责生成每日景点建议
+- 后端会按本地景点库校验并补齐景点，避免返回数据库中不存在的景点
+- 如果你接的是兼容 OpenAI Chat Completions 的服务，通常只需要提供 `base-url + api-key + model`
 
 ## 后续扩展
 

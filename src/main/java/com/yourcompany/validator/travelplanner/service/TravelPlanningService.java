@@ -3,6 +3,8 @@ package com.yourcompany.validator.travelplanner.service;
 import com.yourcompany.validator.travelplanner.dto.PlanRequest;
 import com.yourcompany.validator.travelplanner.dto.PlanResponse;
 import com.yourcompany.validator.travelplanner.dto.SavedPlanSummary;
+import com.yourcompany.validator.travelplanner.dto.AiPlanDayDraft;
+import com.yourcompany.validator.travelplanner.dto.AiPlanDraft;
 import com.yourcompany.validator.travelplanner.entity.AttractionEntity;
 import com.yourcompany.validator.travelplanner.entity.DestinationEntity;
 import com.yourcompany.validator.travelplanner.entity.TravelPlanEntity;
@@ -19,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -32,13 +35,16 @@ public class TravelPlanningService {
     private final DestinationRepository destinationRepository;
     private final AttractionRepository attractionRepository;
     private final TravelPlanRepository travelPlanRepository;
+    private final AiPlanGenerationService aiPlanGenerationService;
 
     public TravelPlanningService(DestinationRepository destinationRepository,
                                  AttractionRepository attractionRepository,
-                                 TravelPlanRepository travelPlanRepository) {
+                                 TravelPlanRepository travelPlanRepository,
+                                 AiPlanGenerationService aiPlanGenerationService) {
         this.destinationRepository = destinationRepository;
         this.attractionRepository = attractionRepository;
         this.travelPlanRepository = travelPlanRepository;
+        this.aiPlanGenerationService = aiPlanGenerationService;
     }
 
     @Transactional(readOnly = true)
@@ -58,29 +64,54 @@ public class TravelPlanningService {
     @Transactional
     public PlanResponse createPlan(PlanRequest request) {
         DestinationEntity destination = resolveDestination(request.city());
-        int days = Math.max(1, Math.min(request.days(), 7));
-        LocalDate startDate = request.startDate() == null ? LocalDate.now() : request.startDate();
+        int days = normalizeDays(request.days());
+        LocalDate startDate = normalizeStartDate(request.startDate());
 
-        List<AttractionEntity> candidates = getAttractionEntities(destination.getCity(), request.interests());
-        if (candidates.isEmpty()) {
-            candidates = getAttractionEntities(destination.getCity(), List.of());
-        }
-        if (candidates.isEmpty()) {
-            throw new IllegalStateException("No attractions available for " + destination.getCity());
-        }
+        List<AttractionEntity> candidates = resolveCandidateAttractions(destination.getCity(), request.interests());
 
-        TravelPlanEntity plan = new TravelPlanEntity(destination.getCity(), startDate, days);
-        List<ItineraryDay> itinerary = new ArrayList<>();
+        List<DaySelection> selections = new ArrayList<>();
         for (int day = 1; day <= days; day++) {
             List<AttractionEntity> dayAttractions = pickForDay(candidates, day);
-            for (int index = 0; index < dayAttractions.size(); index++) {
-                plan.addStop(new TravelPlanStopEntity(dayAttractions.get(index), day, index + 1));
-            }
-            List<Attraction> attractionDtos = dayAttractions.stream().map(this::toAttraction).toList();
-            itinerary.add(new ItineraryDay(
+            selections.add(new DaySelection(
                     day,
                     "Day " + day + " - " + destination.getCity(),
-                    buildTheme(attractionDtos),
+                    null,
+                    dayAttractions
+            ));
+        }
+
+        return savePlan(destination, startDate, days, selections);
+    }
+
+    @Transactional
+    public PlanResponse createAiPlan(PlanRequest request) {
+        DestinationEntity destination = resolveDestination(request.city());
+        int days = normalizeDays(request.days());
+        LocalDate startDate = normalizeStartDate(request.startDate());
+        List<AttractionEntity> candidates = resolveCandidateAttractions(destination.getCity(), request.interests());
+        List<Attraction> candidateDtos = candidates.stream().map(this::toAttraction).toList();
+
+        AiPlanDraft draft = aiPlanGenerationService.generatePlan(request, toDestination(destination), candidateDtos, days);
+        List<DaySelection> selections = buildAiSelections(destination, candidates, days, draft);
+
+        return savePlan(destination, startDate, days, selections);
+    }
+
+    private PlanResponse savePlan(DestinationEntity destination,
+                                  LocalDate startDate,
+                                  int days,
+                                  List<DaySelection> selections) {
+        TravelPlanEntity plan = new TravelPlanEntity(destination.getCity(), startDate, days);
+        List<ItineraryDay> itinerary = new ArrayList<>(selections.size());
+        for (DaySelection selection : selections) {
+            for (int index = 0; index < selection.attractions().size(); index++) {
+                plan.addStop(new TravelPlanStopEntity(selection.attractions().get(index), selection.day(), index + 1));
+            }
+            List<Attraction> attractionDtos = selection.attractions().stream().map(this::toAttraction).toList();
+            itinerary.add(new ItineraryDay(
+                    selection.day(),
+                    selection.title(),
+                    selection.theme() == null || selection.theme().isBlank() ? buildTheme(attractionDtos) : selection.theme(),
                     estimateDistance(attractionDtos),
                     attractionDtos
             ));
@@ -102,6 +133,17 @@ public class TravelPlanningService {
                         plan.getCreatedAt()
                 ))
                 .toList();
+    }
+
+    private List<AttractionEntity> resolveCandidateAttractions(String city, List<String> interests) {
+        List<AttractionEntity> candidates = getAttractionEntities(city, interests);
+        if (candidates.isEmpty()) {
+            candidates = getAttractionEntities(city, List.of());
+        }
+        if (candidates.isEmpty()) {
+            throw new IllegalStateException("No attractions available for " + city);
+        }
+        return candidates;
     }
 
     @Transactional(readOnly = true)
@@ -152,6 +194,59 @@ public class TravelPlanningService {
                 .orElseThrow(() -> new IllegalStateException("No destinations available"));
     }
 
+    private List<DaySelection> buildAiSelections(DestinationEntity destination,
+                                                 List<AttractionEntity> candidates,
+                                                 int days,
+                                                 AiPlanDraft draft) {
+        Map<Integer, AiPlanDayDraft> draftByDay = new LinkedHashMap<>();
+        if (draft != null && draft.days() != null) {
+            for (AiPlanDayDraft dayDraft : draft.days()) {
+                if (dayDraft != null && dayDraft.day() >= 1 && dayDraft.day() <= days) {
+                    draftByDay.putIfAbsent(dayDraft.day(), dayDraft);
+                }
+            }
+        }
+
+        Map<Long, AttractionEntity> byId = candidates.stream()
+                .collect(Collectors.toMap(AttractionEntity::getId, attraction -> attraction, (left, right) -> left, LinkedHashMap::new));
+        Map<String, AttractionEntity> byName = candidates.stream()
+                .collect(Collectors.toMap(
+                        attraction -> attraction.getName().toLowerCase(Locale.ROOT),
+                        attraction -> attraction,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+
+        Set<Long> usedAttractionIds = new LinkedHashSet<>();
+        List<DaySelection> selections = new ArrayList<>();
+        int maxAttractionsPerDay = Math.min(3, candidates.size());
+
+        for (int day = 1; day <= days; day++) {
+            AiPlanDayDraft dayDraft = draftByDay.get(day);
+            List<AttractionEntity> selected = new ArrayList<>();
+
+            if (dayDraft != null) {
+                addById(dayDraft.attractionIds(), byId, usedAttractionIds, selected);
+                addByName(dayDraft.attractionNames(), byName, usedAttractionIds, selected);
+            }
+
+            if (selected.size() < maxAttractionsPerDay) {
+                fillFromFallbackCandidates(candidates, day, usedAttractionIds, selected, maxAttractionsPerDay);
+            }
+
+            usedAttractionIds.addAll(selected.stream().map(AttractionEntity::getId).toList());
+            selections.add(new DaySelection(
+                    day,
+                    dayDraft != null && dayDraft.title() != null && !dayDraft.title().isBlank()
+                            ? dayDraft.title()
+                            : "Day " + day + " - " + destination.getCity(),
+                    dayDraft == null ? null : dayDraft.theme(),
+                    selected
+            ));
+        }
+        return selections;
+    }
+
     private List<AttractionEntity> pickForDay(List<AttractionEntity> candidates, int day) {
         int start = ((day - 1) * 2) % candidates.size();
         List<AttractionEntity> selected = new ArrayList<>();
@@ -159,6 +254,78 @@ public class TravelPlanningService {
             selected.add(candidates.get((start + i) % candidates.size()));
         }
         return selected;
+    }
+
+    private void addById(List<Long> attractionIds,
+                         Map<Long, AttractionEntity> byId,
+                         Set<Long> usedAttractionIds,
+                         List<AttractionEntity> selected) {
+        if (attractionIds == null) {
+            return;
+        }
+        for (Long attractionId : attractionIds) {
+            AttractionEntity attraction = byId.get(attractionId);
+            tryAddAttraction(attraction, usedAttractionIds, selected, false);
+        }
+    }
+
+    private void addByName(List<String> attractionNames,
+                           Map<String, AttractionEntity> byName,
+                           Set<Long> usedAttractionIds,
+                           List<AttractionEntity> selected) {
+        if (attractionNames == null) {
+            return;
+        }
+        for (String attractionName : attractionNames) {
+            if (attractionName == null || attractionName.isBlank()) {
+                continue;
+            }
+            AttractionEntity attraction = byName.get(attractionName.toLowerCase(Locale.ROOT));
+            tryAddAttraction(attraction, usedAttractionIds, selected, false);
+        }
+    }
+
+    private void fillFromFallbackCandidates(List<AttractionEntity> candidates,
+                                            int day,
+                                            Set<Long> usedAttractionIds,
+                                            List<AttractionEntity> selected,
+                                            int limit) {
+        for (AttractionEntity attraction : pickForDay(candidates, day)) {
+            if (selected.size() >= limit) {
+                return;
+            }
+            tryAddAttraction(attraction, usedAttractionIds, selected, false);
+        }
+
+        for (AttractionEntity attraction : candidates) {
+            if (selected.size() >= limit) {
+                return;
+            }
+            tryAddAttraction(attraction, usedAttractionIds, selected, false);
+        }
+
+        for (AttractionEntity attraction : candidates) {
+            if (selected.size() >= limit) {
+                return;
+            }
+            tryAddAttraction(attraction, usedAttractionIds, selected, true);
+        }
+    }
+
+    private void tryAddAttraction(AttractionEntity attraction,
+                                  Set<Long> usedAttractionIds,
+                                  List<AttractionEntity> selected,
+                                  boolean allowReuseAcrossDays) {
+        if (attraction == null) {
+            return;
+        }
+        if (selected.stream().anyMatch(existing -> existing.getId().equals(attraction.getId()))) {
+            return;
+        }
+        if (!allowReuseAcrossDays && usedAttractionIds.contains(attraction.getId())) {
+            return;
+        }
+        selected.add(attraction);
     }
 
     private boolean matchesInterest(AttractionEntity attraction, Set<String> interests) {
@@ -176,6 +343,14 @@ public class TravelPlanningService {
                 .filter(value -> value != null && !value.isBlank())
                 .map(value -> value.toLowerCase(Locale.ROOT))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private int normalizeDays(int days) {
+        return Math.max(1, Math.min(days, 7));
+    }
+
+    private LocalDate normalizeStartDate(LocalDate startDate) {
+        return startDate == null ? LocalDate.now() : startDate;
     }
 
     private String buildTheme(List<Attraction> dayAttractions) {
@@ -234,5 +409,13 @@ public class TravelPlanningService {
                 entity.getSuggestedHours(),
                 entity.getTags()
         );
+    }
+
+    private record DaySelection(
+            int day,
+            String title,
+            String theme,
+            List<AttractionEntity> attractions
+    ) {
     }
 }

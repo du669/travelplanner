@@ -45,6 +45,11 @@ public class TravelController {
         return travelPlanningService.createPlan(request);
     }
 
+    @PostMapping("/ai/plans")
+    public PlanResponse aiPlan(@RequestBody PlanRequest request) {
+        return travelPlanningService.createAiPlan(request);
+    }
+
     @GetMapping("/plans")
     public List<SavedPlanSummary> savedPlans() {
         return travelPlanningService.getSavedPlans();

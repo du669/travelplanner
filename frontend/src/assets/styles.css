@@ -127,8 +127,17 @@ input {
   margin-bottom: 14px;
 }
 
+.section-title.compact {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
 .section-title h2 {
   font-size: 20px;
+}
+
+.section-title.compact h2 {
+  font-size: 16px;
 }
 
 .day-card,
@@ -181,6 +190,38 @@ input {
 
 .route-stop span {
   font-weight: 700;
+}
+
+.saved-plans {
+  display: grid;
+  gap: 8px;
+}
+
+.saved-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  background: #f7faf8;
+  border: 1px solid #dce6e1;
+  border-radius: 8px;
+}
+
+.saved-plan:hover,
+.saved-plan.active {
+  border-color: #126b62;
+}
+
+.saved-plan span {
+  font-weight: 700;
+}
+
+.saved-plan small {
+  color: #63736f;
 }
 
 .attractions {

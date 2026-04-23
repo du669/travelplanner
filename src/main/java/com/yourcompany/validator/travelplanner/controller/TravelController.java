@@ -2,11 +2,13 @@ package com.yourcompany.validator.travelplanner.controller;
 
 import com.yourcompany.validator.travelplanner.dto.PlanRequest;
 import com.yourcompany.validator.travelplanner.dto.PlanResponse;
+import com.yourcompany.validator.travelplanner.dto.SavedPlanSummary;
 import com.yourcompany.validator.travelplanner.model.Attraction;
 import com.yourcompany.validator.travelplanner.model.Destination;
 import com.yourcompany.validator.travelplanner.service.TravelPlanningService;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,5 +43,15 @@ public class TravelController {
     @PostMapping("/plans")
     public PlanResponse plan(@RequestBody PlanRequest request) {
         return travelPlanningService.createPlan(request);
+    }
+
+    @GetMapping("/plans")
+    public List<SavedPlanSummary> savedPlans() {
+        return travelPlanningService.getSavedPlans();
+    }
+
+    @GetMapping("/plans/{id}")
+    public PlanResponse savedPlan(@PathVariable Long id) {
+        return travelPlanningService.getSavedPlan(id);
     }
 }

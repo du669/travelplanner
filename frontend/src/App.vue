@@ -53,6 +53,23 @@
         <p>{{ plan.destination.summary }}</p>
         <el-tag effect="plain">适合季节：{{ plan.destination.bestSeason }}</el-tag>
       </section>
+
+      <section class="saved-plans">
+        <div class="section-title compact">
+          <h2>已保存行程</h2>
+          <span>{{ savedPlans.length }} 条</span>
+        </div>
+        <button
+          v-for="savedPlan in savedPlans"
+          :key="savedPlan.id"
+          class="saved-plan"
+          :class="{ active: plan?.planId === savedPlan.id }"
+          @click="loadSavedPlan(savedPlan.id)"
+        >
+          <span>{{ savedPlan.city }} · {{ savedPlan.days }} 天</span>
+          <small>{{ savedPlan.startDate }} · {{ savedPlan.stopCount }} 个景点</small>
+        </button>
+      </section>
     </el-aside>
 
     <el-container>
@@ -124,11 +141,12 @@
 <script setup>
 import { nextTick, onMounted, reactive, ref, watch } from 'vue'
 import L from 'leaflet'
-import { createPlan, getAttractions, getDestinations } from './api/travel'
+import { createPlan, getAttractions, getDestinations, getSavedPlan, getSavedPlans } from './api/travel'
 
 const destinations = ref([])
 const attractions = ref([])
 const plan = ref(null)
+const savedPlans = ref([])
 const loading = ref(false)
 const map = ref(null)
 const markers = ref([])
@@ -209,6 +227,21 @@ const refreshPlan = async () => {
     ])
     plan.value = newPlan
     attractions.value = newAttractions
+    savedPlans.value = await getSavedPlans()
+  } finally {
+    loading.value = false
+  }
+}
+
+const loadSavedPlan = async (id) => {
+  loading.value = true
+  try {
+    const savedPlan = await getSavedPlan(id)
+    plan.value = savedPlan
+    form.city = savedPlan.destination.city
+    form.startDate = savedPlan.startDate
+    form.days = savedPlan.days
+    attractions.value = await getAttractions({ city: savedPlan.destination.city, interests: form.interests })
   } finally {
     loading.value = false
   }
@@ -230,6 +263,7 @@ onMounted(async () => {
   destinations.value = await getDestinations()
   form.city = destinations.value[0]?.city || ''
   await refreshPlan()
+  savedPlans.value = await getSavedPlans()
 })
 
 watch(plan, renderMap)

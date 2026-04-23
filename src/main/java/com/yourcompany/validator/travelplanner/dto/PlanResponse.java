@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 public record PlanResponse(
+        Long planId,
         Destination destination,
         LocalDate startDate,
         int days,

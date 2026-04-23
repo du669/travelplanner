@@ -7,6 +7,7 @@ public record AiPlanDayDraft(
         String title,
         String theme,
         List<Long> attractionIds,
-        List<String> attractionNames
+        List<String> attractionNames,
+        List<AiAttractionDraft> attractions
 ) {
 }

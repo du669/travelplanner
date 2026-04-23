@@ -14,6 +14,8 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,24 +38,43 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
     @Override
     public AiPlanDraft generatePlan(PlanRequest request, Destination destination, List<Attraction> candidates, int days) {
         validateConfiguration();
+        boolean hasLocalCandidates = candidates != null && !candidates.isEmpty();
 
         RestClient client = buildClient();
         ChatCompletionRequest payload = new ChatCompletionRequest(
                 properties.getModel(),
                 List.of(
-                        new ChatMessage("system", buildSystemPrompt(days)),
-                        new ChatMessage("user", buildUserPrompt(request, destination, candidates, days))
+                        new ChatMessage("system", buildSystemPrompt(days, hasLocalCandidates)),
+                        new ChatMessage("user", buildUserPrompt(request, destination, candidates, days, hasLocalCandidates))
                 ),
                 properties.getTemperature()
         );
 
-        ChatCompletionResponse response = client.post()
-                .uri("/chat/completions")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
-                .retrieve()
-                .body(ChatCompletionResponse.class);
+        String responseBody;
+        try {
+            responseBody = client.post()
+                    .uri("/chat/completions")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(objectMapper.writeValueAsString(payload))
+                    .retrieve()
+                    .body(String.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to serialize AI request payload", exception);
+        } catch (RestClientResponseException exception) {
+            String body = exception.getResponseBodyAsString();
+            throw new IllegalStateException("AI provider error: " + exception.getStatusCode() +
+                    (StringUtils.hasText(body) ? " - " + body : ""));
+        } catch (RestClientException exception) {
+            throw new IllegalStateException("Failed to call AI provider: " + exception.getMessage(), exception);
+        }
+
+        ChatCompletionResponse response;
+        try {
+            response = objectMapper.readValue(responseBody, ChatCompletionResponse.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to parse AI provider response: " + responseBody, exception);
+        }
 
         if (response == null || response.choices() == null || response.choices().isEmpty()) {
             throw new IllegalStateException("AI model returned an empty response");
@@ -98,35 +119,63 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
                 .build();
     }
 
-    private String buildSystemPrompt(int days) {
+    private String buildSystemPrompt(int days, boolean hasLocalCandidates) {
         return """
-                You are a travel planning engine.
-                Return JSON only. Do not use Markdown code fences.
-                Follow this schema exactly:
+                你是一个旅行规划引擎。
+                只返回 JSON，不要输出 Markdown 代码块，不要输出任何 JSON 之外的解释。
+                所有面向用户展示的文本字段都必须使用简体中文，包括 title、summary、theme、description、bestSeason、attractionNames。
+                按照下面的 JSON 结构返回：
                 {
                   "title": "string",
                   "summary": "string",
+                  "destination": {
+                    "city": "string",
+                    "country": "string",
+                    "latitude": 0,
+                    "longitude": 0,
+                    "bestSeason": "string",
+                    "summary": "string"
+                  },
                   "days": [
                     {
                       "day": 1,
                       "title": "string",
                       "theme": "string",
                       "attractionIds": [1, 2, 3],
-                      "attractionNames": ["optional fallback names"]
+                      "attractionNames": ["optional fallback names"],
+                      "attractions": [
+                        {
+                          "id": 1,
+                          "name": "string",
+                          "city": "string",
+                          "category": "string",
+                          "description": "string",
+                          "latitude": 0,
+                          "longitude": 0,
+                          "rating": 4.6,
+                          "suggestedHours": 2,
+                          "tags": ["string"]
+                        }
+                      ]
                     }
                   ]
                 }
 
-                Rules:
-                - Output exactly %d day objects.
-                - Each day should contain 1 to 3 attractions.
-                - Only select attractions from the provided candidate list.
-                - Prefer attractionIds and include attractionNames as a fallback.
-                - Make the plan realistic and aligned with the user's interests.
-                """.formatted(days);
+                规则：
+                - 必须严格输出 %d 个 day 对象。
+                - 每天包含 1 到 3 个景点。
+                - destination 中要补全用户请求城市的摘要信息。
+                - 如果提供了候选景点，只能从候选景点中选择，并优先填写 attractionIds。
+                - 如果没有提供候选景点，你需要自行生成该目的地的真实感景点，并为每个景点提供大致经纬度。
+                - attractionNames 可以作为候选兜底。
+                - 行程风格要符合用户兴趣偏好。
+                - 所有说明文字都用自然、地道、简洁的中文表达。
+                """.formatted(days) + (hasLocalCandidates
+                ? "\n候选景点列表就是本次可选景点的事实依据。"
+                : "\n当前没有本地景点库，请你自行生成该城市可游玩的景点。");
     }
 
-    private String buildUserPrompt(PlanRequest request, Destination destination, List<Attraction> candidates, int days) {
+    private String buildUserPrompt(PlanRequest request, Destination destination, List<Attraction> candidates, int days, boolean hasLocalCandidates) {
         try {
             String candidateJson = objectMapper.writeValueAsString(candidates.stream()
                     .map(attraction -> {
@@ -145,19 +194,31 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
             requestPayload.put("country", destination.country());
             requestPayload.put("bestSeason", destination.bestSeason());
             requestPayload.put("summary", destination.summary());
-            requestPayload.put("startDate", request.startDate());
+            requestPayload.put("startDate", request.startDate() == null ? null : request.startDate().toString());
             requestPayload.put("days", days);
             requestPayload.put("interests", request.interests());
             String requestJson = objectMapper.writeValueAsString(requestPayload);
+            if (hasLocalCandidates) {
+                return """
+                        请基于下面的候选景点规划这次旅行。
+
+                        旅行请求：
+                        %s
+
+                        候选景点：
+                        %s
+                        """.formatted(requestJson, candidateJson);
+            }
             return """
-                    Plan this trip using the candidate attractions below.
+                    请为一个本地数据库尚未覆盖的自定义目的地规划旅行。
 
-                    Trip request:
+                    旅行请求：
                     %s
 
-                    Candidate attractions:
-                    %s
-                    """.formatted(requestJson, candidateJson);
+                    当前没有这个城市的本地候选景点。
+                    请你自行生成目的地摘要和详细景点。
+                    每个生成的景点都必须包含大致经纬度，方便前端渲染地图。
+                    """.formatted(requestJson);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to build AI prompt payload", exception);
         }

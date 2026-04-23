@@ -1,8 +1,13 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 8000
+})
+
+const aiApi = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  timeout: Number(import.meta.env.VITE_AI_API_TIMEOUT || 60000)
 })
 
 const toSearchParams = (params = {}) => {
@@ -24,7 +29,7 @@ export const getAttractions = (params) =>
 
 export const createPlan = (payload) => api.post('/plans', payload).then((response) => response.data)
 
-export const createAiPlan = (payload) => api.post('/ai/plans', payload).then((response) => response.data)
+export const createAiPlan = (payload) => aiApi.post('/ai/plans', payload).then((response) => response.data)
 
 export const getSavedPlans = () => api.get('/plans').then((response) => response.data)
 

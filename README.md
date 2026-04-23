@@ -1,6 +1,6 @@
 # Travel Planner
 
-前后端分离的旅行计划规划网站示例。
+前后端分离的旅行计划规划网站示例。当前版本使用代码内置的目的地和景点数据，不依赖 MySQL。
 
 ## 技术栈
 
@@ -12,7 +12,7 @@
 - 查询目的地城市
 - 按城市和兴趣筛选旅游景点
 - 自动生成 1-7 天旅行计划
-- 使用 MySQL 保存城市、景点和生成过的行程
+- 使用内存保存本次启动期间生成过的行程
 - 在前端查看并重新打开已保存行程
 - 在地图上显示景点标记和行程路线
 - 点击每日行程中的景点后，地图自动聚焦到对应位置
@@ -54,27 +54,6 @@ javac -version
 ./mvnw spring-boot:run
 ```
 
-后端默认连接本机 MySQL：
-
-```properties
-数据库：travelplanner
-用户名：root
-密码：空
-```
-
-如果你的 MySQL 密码不是空，可以在 PowerShell 启动前设置：
-
-```powershell
-$env:SPRING_DATASOURCE_USERNAME="root"
-$env:SPRING_DATASOURCE_PASSWORD="你的MySQL密码"
-```
-
-也可以完整覆盖连接地址：
-
-```powershell
-$env:SPRING_DATASOURCE_URL="jdbc:mysql://localhost:3306/travelplanner?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-```
-
 前端：
 
 ```bash
@@ -104,8 +83,15 @@ TRAVEL_AI_MODEL=gpt-4.1-mini
 
 - 后端会要求模型返回固定 JSON 结构
 - 模型只负责生成每日景点建议
-- 后端会按本地景点库校验并补齐景点，避免返回数据库中不存在的景点
+- 后端会按本地景点库校验并补齐景点，避免返回候选集合之外的景点
 - 如果你接的是兼容 OpenAI Chat Completions 的服务，通常只需要提供 `base-url + api-key + model`
+
+例如接通义千问兼容接口时：
+
+```properties
+TRAVEL_AI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+TRAVEL_AI_MODEL=qwen-plus
+```
 
 ## 后续扩展
 

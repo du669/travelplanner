@@ -35,3 +35,6 @@ frontend/dist/
 
 ### VS Code ###
 .vscode/
+
+### Local Secrets ###
+.env.properties

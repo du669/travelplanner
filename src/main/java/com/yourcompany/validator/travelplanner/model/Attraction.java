@@ -12,6 +12,7 @@ public record Attraction(
         double longitude,
         double rating,
         int suggestedHours,
-        List<String> tags
+        List<String> tags,
+        List<String> imageUrls
 ) {
 }

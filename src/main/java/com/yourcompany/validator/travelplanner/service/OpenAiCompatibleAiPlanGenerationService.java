@@ -63,8 +63,8 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
             throw new IllegalStateException("Failed to serialize AI request payload", exception);
         } catch (RestClientResponseException exception) {
             String body = exception.getResponseBodyAsString();
-            throw new IllegalStateException("AI provider error: " + exception.getStatusCode() +
-                    (StringUtils.hasText(body) ? " - " + body : ""));
+            throw new IllegalStateException("AI provider error: " + exception.getStatusCode()
+                    + (StringUtils.hasText(body) ? " - " + body : ""));
         } catch (RestClientException exception) {
             throw new IllegalStateException("Failed to call AI provider: " + exception.getMessage(), exception);
         }
@@ -121,10 +121,10 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
 
     private String buildSystemPrompt(int days, boolean hasLocalCandidates) {
         return """
-                你是一个旅行规划引擎。
-                只返回 JSON，不要输出 Markdown 代码块，不要输出任何 JSON 之外的解释。
-                所有面向用户展示的文本字段都必须使用简体中文，包括 title、summary、theme、description、bestSeason、attractionNames。
-                按照下面的 JSON 结构返回：
+                你是一个专业旅行规划助手。
+                只返回 JSON，不要返回 Markdown，不要解释，不要输出 JSON 之外的任何内容。
+                所有面向用户展示的文本都必须使用简体中文，包括 title、summary、theme、description、bestSeason、attractionNames。
+                输出必须是严格合法的 JSON，结构如下：
                 {
                   "title": "string",
                   "summary": "string",
@@ -161,18 +161,19 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
                   ]
                 }
 
-                规则：
+                规划规则：
                 - 必须严格输出 %d 个 day 对象。
-                - 每天包含 1 到 3 个景点。
-                - destination 中要补全用户请求城市的摘要信息。
+                - 每天优先安排 3 到 5 个景点，尽量让一天行程完整，不要只给 1 到 2 个景点，除非候选景点本身非常少。
+                - 每天的总游玩时长尽量控制在 7 到 10 小时，让上午、下午、傍晚安排更合理。
                 - 如果提供了候选景点，只能从候选景点中选择，并优先填写 attractionIds。
-                - 如果没有提供候选景点，你需要自行生成该目的地的真实感景点，并为每个景点提供大致经纬度。
-                - attractionNames 可以作为候选兜底。
-                - 行程风格要符合用户兴趣偏好。
-                - 所有说明文字都用自然、地道、简洁的中文表达。
+                - 如果没有提供候选景点，需要自行生成真实可信的景点，并补充大致经纬度。
+                - attractionNames 可以作为候选兜底字段。
+                - 行程主题要和用户兴趣偏好一致。
+                - destination 需要补全城市摘要、最佳季节等信息。
+                - 输出文案要自然、地道、简洁。
                 """.formatted(days) + (hasLocalCandidates
                 ? "\n候选景点列表就是本次可选景点的事实依据。"
-                : "\n当前没有本地景点库，请你自行生成该城市可游玩的景点。");
+                : "\n当前没有本地候选景点，请你自行生成适合该城市的一日游景点组合。");
     }
 
     private String buildUserPrompt(PlanRequest request, Destination destination, List<Attraction> candidates, int days, boolean hasLocalCandidates) {
@@ -189,6 +190,7 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
                         return candidate;
                     })
                     .toList());
+
             Map<String, Object> requestPayload = new LinkedHashMap<>();
             requestPayload.put("city", destination.city());
             requestPayload.put("country", destination.country());
@@ -198,9 +200,11 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
             requestPayload.put("days", days);
             requestPayload.put("interests", request.interests());
             String requestJson = objectMapper.writeValueAsString(requestPayload);
+
             if (hasLocalCandidates) {
                 return """
                         请基于下面的候选景点规划这次旅行。
+                        每天尽量安排 3 到 5 个景点，并让路线顺畅、主题明确、节奏完整。
 
                         旅行请求：
                         %s
@@ -209,15 +213,17 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
                         %s
                         """.formatted(requestJson, candidateJson);
             }
+
             return """
                     请为一个本地数据库尚未覆盖的自定义目的地规划旅行。
+                    每天尽量安排 3 到 5 个景点，并让路线顺畅、主题明确、节奏完整。
 
                     旅行请求：
                     %s
 
                     当前没有这个城市的本地候选景点。
-                    请你自行生成目的地摘要和详细景点。
-                    每个生成的景点都必须包含大致经纬度，方便前端渲染地图。
+                    请你自行生成目的地摘要和详细景点信息。
+                    每个生成的景点都必须包含大致经纬度，方便前端绘制地图。
                     """.formatted(requestJson);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to build AI prompt payload", exception);

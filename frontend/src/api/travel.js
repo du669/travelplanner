@@ -2,12 +2,12 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 8000
+  timeout: Number(import.meta.env.VITE_API_TIMEOUT || 60000)
 })
 
 const aiApi = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: Number(import.meta.env.VITE_AI_API_TIMEOUT || 60000)
+  timeout: Number(import.meta.env.VITE_AI_API_TIMEOUT || 180000)
 })
 
 const toSearchParams = (params = {}) => {
@@ -31,6 +31,65 @@ export const createPlan = (payload) => api.post('/plans', payload).then((respons
 
 export const createAiPlan = (payload) => aiApi.post('/ai/plans', payload).then((response) => response.data)
 
+export const streamAiPlan = async (payload, handlers = {}) => {
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}/ai/plans/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Streaming request failed: ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let currentEvent = 'message'
+
+  const emit = (eventName, data) => {
+    if (eventName === 'preview') handlers.onPreview?.(data)
+    else if (eventName === 'status') handlers.onStatus?.(data)
+    else if (eventName === 'complete') handlers.onComplete?.(data)
+    else if (eventName === 'error') handlers.onError?.(data)
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    let boundaryIndex
+    while ((boundaryIndex = buffer.indexOf('\n\n')) >= 0) {
+      const chunk = buffer.slice(0, boundaryIndex)
+      buffer = buffer.slice(boundaryIndex + 2)
+
+      const lines = chunk.split('\n')
+      let dataLine = ''
+      currentEvent = 'message'
+
+      lines.forEach((line) => {
+        if (line.startsWith('event:')) currentEvent = line.slice(6).trim()
+        if (line.startsWith('data:')) dataLine += line.slice(5).trim()
+      })
+
+      if (!dataLine) continue
+
+      try {
+        emit(currentEvent, JSON.parse(dataLine))
+      } catch (error) {
+        console.error('Failed to parse stream chunk', error)
+      }
+    }
+  }
+}
+
 export const getSavedPlans = () => api.get('/plans').then((response) => response.data)
 
 export const getSavedPlan = (id) => api.get(`/plans/${id}`).then((response) => response.data)
+
+export const getPlanRoutes = (id) => api.get(`/plans/${id}/routes`).then((response) => response.data)
+
+export const getMapConfig = () => api.get('/map/config').then((response) => response.data)

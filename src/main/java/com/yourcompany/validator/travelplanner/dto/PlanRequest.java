@@ -6,7 +6,9 @@ import java.util.List;
 public record PlanRequest(
         String city,
         LocalDate startDate,
+        LocalDate endDate,
         int days,
-        List<String> interests
+        List<String> interests,
+        List<ManualDayRequest> manualDays
 ) {
 }

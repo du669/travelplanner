@@ -28,16 +28,20 @@ export const getAttractions = (params) =>
   api.get('/attractions', { params: toSearchParams(params) }).then((response) => response.data)
 
 export const createPlan = (payload) => api.post('/plans', payload).then((response) => response.data)
+export const applyPlanEdits = (payload) => api.post('/plans/edit', payload).then((response) => response.data)
+export const previewPlanRoutes = (payload) => api.post('/plans/routes-preview', payload).then((response) => response.data)
 
 export const createAiPlan = (payload) => aiApi.post('/ai/plans', payload).then((response) => response.data)
+export const optimizePlan = (payload) => aiApi.post('/ai/plans/optimize', payload).then((response) => response.data)
 
-export const streamAiPlan = async (payload, handlers = {}) => {
-  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}/ai/plans/stream`, {
+const streamPlanEvents = async (endpoint, payload, handlers = {}, options = {}) => {
+  const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || '/api'}${endpoint}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: options.signal
   })
 
   if (!response.ok || !response.body) {
@@ -85,6 +89,12 @@ export const streamAiPlan = async (payload, handlers = {}) => {
     }
   }
 }
+
+export const streamAiPlan = async (payload, handlers = {}, options = {}) =>
+  streamPlanEvents('/ai/plans/stream', payload, handlers, options)
+
+export const streamStandardPlan = async (payload, handlers = {}, options = {}) =>
+  streamPlanEvents('/plans/stream', payload, handlers, options)
 
 export const getSavedPlans = () => api.get('/plans').then((response) => response.data)
 

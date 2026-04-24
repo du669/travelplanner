@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yourcompany.validator.travelplanner.config.AiModelProperties;
 import com.yourcompany.validator.travelplanner.dto.AiPlanDraft;
+import com.yourcompany.validator.travelplanner.dto.PlanEditRequest;
+import com.yourcompany.validator.travelplanner.dto.PlanOptimizeRequest;
 import com.yourcompany.validator.travelplanner.dto.PlanRequest;
 import com.yourcompany.validator.travelplanner.model.Attraction;
 import com.yourcompany.validator.travelplanner.model.Destination;
@@ -89,6 +91,57 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
             return objectMapper.readValue(extractJson(content), AiPlanDraft.class);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to parse AI plan JSON", exception);
+        }
+    }
+
+    @Override
+    public AiPlanDraft optimizePlan(PlanOptimizeRequest request,
+                                    Destination destination,
+                                    List<Attraction> candidates,
+                                    int days) {
+        validateConfiguration();
+
+        RestClient client = buildClient();
+        ChatCompletionRequest payload = new ChatCompletionRequest(
+                properties.getModel(),
+                List.of(
+                        new ChatMessage("system", buildOptimizeSystemPrompt(days)),
+                        new ChatMessage("user", buildOptimizeUserPrompt(request, destination, candidates, days))
+                ),
+                properties.getTemperature()
+        );
+
+        String responseBody;
+        try {
+            responseBody = client.post()
+                    .uri("/chat/completions")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(objectMapper.writeValueAsString(payload))
+                    .retrieve()
+                    .body(String.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to serialize AI optimize payload", exception);
+        } catch (RestClientResponseException exception) {
+            String body = exception.getResponseBodyAsString();
+            throw new IllegalStateException("AI provider error: " + exception.getStatusCode()
+                    + (StringUtils.hasText(body) ? " - " + body : ""));
+        } catch (RestClientException exception) {
+            throw new IllegalStateException("Failed to call AI provider: " + exception.getMessage(), exception);
+        }
+
+        try {
+            ChatCompletionResponse response = objectMapper.readValue(responseBody, ChatCompletionResponse.class);
+            if (response == null || response.choices() == null || response.choices().isEmpty()) {
+                throw new IllegalStateException("AI model returned an empty response");
+            }
+            String content = response.choices().get(0).message() == null ? null : response.choices().get(0).message().content();
+            if (!StringUtils.hasText(content)) {
+                throw new IllegalStateException("AI model returned empty content");
+            }
+            return objectMapper.readValue(extractJson(content), AiPlanDraft.class);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to parse AI optimization JSON", exception);
         }
     }
 
@@ -227,6 +280,51 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
                     """.formatted(requestJson);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to build AI prompt payload", exception);
+        }
+    }
+
+    private String buildOptimizeSystemPrompt(int days) {
+        return """
+                You are refining an existing travel plan.
+                Return JSON only and follow the exact same schema as the normal planner.
+                All user-facing text must be Simplified Chinese.
+                Keep the destination city consistent, keep the trip length exactly %d days,
+                and prioritize the attractions already present in the current plan.
+                You may reorder attractions across days, improve titles/themes, and balance the pace.
+                Do not invent generic placeholder spots. If candidate attractions are provided, use them as the factual basis.
+                """.formatted(days);
+    }
+
+    private String buildOptimizeUserPrompt(PlanOptimizeRequest request,
+                                           Destination destination,
+                                           List<Attraction> candidates,
+                                           int days) {
+        try {
+            PlanEditRequest currentPlan = request.plan();
+            Map<String, Object> optimizationContext = new LinkedHashMap<>();
+            optimizationContext.put("city", destination.city());
+            optimizationContext.put("country", destination.country());
+            optimizationContext.put("startDate", currentPlan == null || currentPlan.startDate() == null ? null : currentPlan.startDate().toString());
+            optimizationContext.put("days", days);
+            optimizationContext.put("interests", request.interests());
+            optimizationContext.put("instruction", request.instruction());
+            optimizationContext.put("currentPlan", currentPlan);
+            optimizationContext.put("candidateAttractions", candidates);
+
+            return """
+                    Refine the following trip plan.
+                    Requirements:
+                    1. Preserve the same destination city.
+                    2. Use Simplified Chinese for all displayed text.
+                    3. Keep the itinerary to exactly %d days.
+                    4. Prefer the provided attractions and optimize ordering, pacing, and daily themes.
+                    5. Make the itinerary easier to follow on a map and for real travel.
+
+                    Data:
+                    %s
+                    """.formatted(days, objectMapper.writeValueAsString(optimizationContext));
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Failed to build AI optimization prompt", exception);
         }
     }
 

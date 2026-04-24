@@ -44,7 +44,9 @@ public class AmapRoutingService {
     }
 
     private PlanRouteResponse.DayRoute buildDayRoute(String city, ItineraryDay day) {
-        List<Attraction> attractions = day.attractions();
+        List<Attraction> attractions = day.attractions().stream()
+                .filter(this::hasValidCoordinates)
+                .toList();
         if (attractions == null || attractions.isEmpty()) {
             return new PlanRouteResponse.DayRoute(day.day(), 0, 0, List.of(), List.of());
         }
@@ -291,6 +293,15 @@ public class AmapRoutingService {
 
     private String toLngLat(Attraction attraction) {
         return attraction.longitude() + "," + attraction.latitude();
+    }
+
+    private boolean hasValidCoordinates(Attraction attraction) {
+        if (attraction == null) {
+            return false;
+        }
+        return Math.abs(attraction.longitude()) <= 180
+                && Math.abs(attraction.latitude()) <= 90
+                && !(attraction.longitude() == 0 && attraction.latitude() == 0);
     }
 
     private void validateConfiguration() {

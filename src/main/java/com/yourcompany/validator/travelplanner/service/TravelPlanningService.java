@@ -4,6 +4,8 @@ import com.yourcompany.validator.travelplanner.dto.AiAttractionDraft;
 import com.yourcompany.validator.travelplanner.dto.AiDestinationDraft;
 import com.yourcompany.validator.travelplanner.dto.AiPlanDayDraft;
 import com.yourcompany.validator.travelplanner.dto.AiPlanDraft;
+import com.yourcompany.validator.travelplanner.dto.PlanEditRequest;
+import com.yourcompany.validator.travelplanner.dto.PlanOptimizeRequest;
 import com.yourcompany.validator.travelplanner.dto.ManualDayRequest;
 import com.yourcompany.validator.travelplanner.dto.PlanRequest;
 import com.yourcompany.validator.travelplanner.dto.PlanResponse;
@@ -12,6 +14,7 @@ import com.yourcompany.validator.travelplanner.model.Attraction;
 import com.yourcompany.validator.travelplanner.model.Destination;
 import com.yourcompany.validator.travelplanner.model.ItineraryDay;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -41,57 +44,35 @@ public class TravelPlanningService {
     private final Map<Long, SavedPlan> savedPlans = new ConcurrentHashMap<>();
 
     private final List<Destination> destinations = List.of(
-            new Destination("Shanghai", "中国", 31.2304, 121.4737, "春秋季",
-                    "一座兼具都市天际线、历史街区与丰富美食体验的国际化城市。"),
-            new Destination("Tokyo", "日本", 35.6762, 139.6503, "春秋季",
-                    "融合流行文化、经典街区与高效交通系统的多层次都市。"),
-            new Destination("Chengdu", "中国", 30.5728, 104.0668, "春秋季",
-                    "节奏松弛、以美食、茶馆和人文景点闻名的西南城市。")
+            new Destination("\u4e0a\u6d77", "\u4e2d\u56fd", 31.2304, 121.4737, "\u6625\u79cb\u4e24\u5b63", "\u4e0a\u6d77\u662f\u4e2d\u897f\u4ea4\u878d\u7684\u56fd\u9645\u5927\u90fd\u5e02\uff0c\u9002\u5408\u57ce\u5e02\u6f2b\u6b65\u3001\u535a\u7269\u9986\u4e0e\u7f8e\u98df\u4f53\u9a8c\u3002"),
+            new Destination("\u4e1c\u4eac", "\u65e5\u672c", 35.6762, 139.6503, "\u6625\u79cb\u4e24\u5b63", "\u4e1c\u4eac\u517c\u5177\u73b0\u4ee3\u90fd\u5e02\u4e0e\u4f20\u7edf\u8857\u533a\u6c14\u8d28\uff0c\u9002\u5408\u9996\u6b21\u6df1\u5ea6\u6e38\u3002"),
+            new Destination("\u6210\u90fd", "\u4e2d\u56fd", 30.5728, 104.0668, "\u6625\u79cb\u4e24\u5b63", "\u6210\u90fd\u4ee5\u4f11\u95f2\u751f\u6d3b\u3001\u5ddd\u83dc\u4e0e\u5386\u53f2\u6587\u5316\u95fb\u540d\uff0c\u9002\u5408\u6162\u8282\u594f\u6e38\u73a9\u3002")
     );
 
     private final List<Attraction> attractions = List.of(
-            new Attraction(1L, "The Bund", "Shanghai", "citywalk",
-                    "经典滨江天际线与历史建筑群，适合散步和拍照。", 31.2400, 121.4900, 4.8, 2,
-                    List.of("walk", "nightview", "photography"), List.of()),
-            new Attraction(2L, "Yu Garden", "Shanghai", "culture",
-                    "老城厢中的江南古典园林，适合感受传统园林氛围。", 31.2273, 121.4925, 4.6, 2,
-                    List.of("culture", "history", "garden"), List.of()),
-            new Attraction(3L, "Shanghai Museum", "Shanghai", "museum",
-                    "系统了解中国艺术与历史的优质博物馆。", 31.2303, 121.4737, 4.7, 3,
-                    List.of("culture", "museum", "history"), List.of()),
-            new Attraction(4L, "Tianzifang", "Shanghai", "citywalk",
-                    "石库门街巷里融合咖啡馆、小店与本地生活气息。", 31.2100, 121.4660, 4.4, 2,
-                    List.of("walk", "food", "shopping"), List.of()),
-            new Attraction(5L, "Tokyo Skytree", "Tokyo", "landmark",
-                    "俯瞰东京城市景观的知名观景塔。", 35.7101, 139.8107, 4.6, 2,
-                    List.of("view", "photography", "cityscape"), List.of()),
-            new Attraction(6L, "Senso-ji", "Tokyo", "culture",
-                    "适合第一次到访东京游客的经典寺庙区域。", 35.7148, 139.7967, 4.8, 2,
-                    List.of("culture", "history", "walk"), List.of()),
-            new Attraction(7L, "Ueno Park", "Tokyo", "park",
-                    "集合公园、博物馆与季节景观的大型休闲区域。", 35.7156, 139.7745, 4.6, 3,
-                    List.of("walk", "family", "museum"), List.of()),
-            new Attraction(8L, "Shibuya", "Tokyo", "citywalk",
-                    "适合购物、夜生活和感受年轻文化活力的街区。", 35.6595, 139.7005, 4.5, 3,
-                    List.of("shopping", "nightlife", "food"), List.of()),
-            new Attraction(9L, "Kuanzhai Alley", "Chengdu", "citywalk",
-                    "能体验成都小吃与街巷生活氛围的历史街区。", 30.6664, 104.0499, 4.4, 2,
-                    List.of("food", "walk", "culture"), List.of()),
-            new Attraction(10L, "Wuhou Shrine", "Chengdu", "culture",
-                    "集三国文化、园林与展陈于一体的人文景点。", 30.6467, 104.0433, 4.6, 2,
-                    List.of("history", "culture", "garden"), List.of()),
-            new Attraction(11L, "Jinli Ancient Street", "Chengdu", "food",
-                    "适合体验小吃、买伴手礼和感受夜晚热闹氛围的古街。", 30.6458, 104.0420, 4.5, 2,
-                    List.of("food", "shopping", "nightview"), List.of()),
-            new Attraction(12L, "Chengdu Research Base of Giant Panda Breeding", "Chengdu", "wildlife",
-                    "热门熊猫基地，通常更适合上午前往。", 30.7338, 104.1464, 4.8, 4,
-                    List.of("family", "nature", "animal"), List.of())
+            new Attraction(1L, "\u5916\u6ee9", "\u4e0a\u6d77", "citywalk", "\u53ef\u6b65\u884c\u6b23\u8d4f\u6d66\u6c5f\u4e24\u5cb8\u4e0e\u4e07\u56fd\u5efa\u7b51\u7fa4\u3002", 31.2400, 121.4900, 4.8, 2, List.of("walk", "nightview", "photography"), List.of()),
+            new Attraction(2L, "\u8c6b\u56ed", "\u4e0a\u6d77", "culture", "\u5178\u578b\u7684\u6c5f\u5357\u56ed\u6797\uff0c\u9002\u5408\u611f\u53d7\u8001\u57ce\u538c\u5386\u53f2\u98ce\u8c8c\u3002", 31.2273, 121.4925, 4.6, 2, List.of("culture", "history", "garden"), List.of()),
+            new Attraction(3L, "\u4e0a\u6d77\u535a\u7269\u9986", "\u4e0a\u6d77", "museum", "\u9986\u85cf\u4e30\u5bcc\uff0c\u9002\u5408\u7cfb\u7edf\u4e86\u89e3\u4e2d\u56fd\u53e4\u4ee3\u827a\u672f\u4e0e\u6587\u7269\u3002", 31.2303, 121.4737, 4.7, 3, List.of("culture", "museum", "history"), List.of()),
+            new Attraction(4L, "\u7530\u5b50\u574a", "\u4e0a\u6d77", "citywalk", "\u8f83\u9002\u5408\u6563\u6b65\u62cd\u7167\u3001\u5c0f\u5e97\u63a2\u8bbf\u548c\u8f7b\u677e\u7528\u9910\u3002", 31.2100, 121.4660, 4.4, 2, List.of("walk", "food", "shopping"), List.of()),
+            new Attraction(5L, "\u4e1c\u4eac\u6674\u7a7a\u5854", "\u4e1c\u4eac", "landmark", "\u4e1c\u4eac\u4ee3\u8868\u6027\u5730\u6807\uff0c\u9002\u5408\u89c2\u666f\u4e0e\u62cd\u6444\u57ce\u5e02\u5929\u9645\u7ebf\u3002", 35.7101, 139.8107, 4.6, 2, List.of("view", "photography", "cityscape"), List.of()),
+            new Attraction(6L, "\u6d45\u8349\u5bfa", "\u4e1c\u4eac", "culture", "\u4f20\u7edf\u6c1b\u56f4\u6d53\u539a\uff0c\u53ef\u7ed3\u5408\u4ef2\u89c1\u4e16\u901a\u4e00\u5e26\u4f11\u95f2\u6e38\u89c8\u3002", 35.7148, 139.7967, 4.8, 2, List.of("culture", "history", "walk"), List.of()),
+            new Attraction(7L, "\u4e0a\u91ce\u516c\u56ed", "\u4e1c\u4eac", "park", "\u516c\u56ed\u5185\u9986\u820d\u4e0e\u7eff\u5730\u8f83\u591a\uff0c\u9002\u5408\u5bb6\u5ead\u4e0e\u6162\u901f\u884c\u7a0b\u3002", 35.7156, 139.7745, 4.6, 3, List.of("walk", "family", "museum"), List.of()),
+            new Attraction(8L, "\u6da9\u8c37", "\u4e1c\u4eac", "citywalk", "\u9002\u5408\u4f53\u9a8c\u6d41\u884c\u6587\u5316\u3001\u5546\u5708\u6f2b\u6b65\u4e0e\u591c\u95f4\u57ce\u5e02\u6c14\u6c1b\u3002", 35.6595, 139.7005, 4.5, 3, List.of("shopping", "nightlife", "food"), List.of()),
+            new Attraction(9L, "\u5bbd\u7a84\u5df7\u5b50", "\u6210\u90fd", "citywalk", "\u9002\u5408\u4f53\u9a8c\u6210\u90fd\u6162\u751f\u6d3b\u4e0e\u7279\u8272\u5c0f\u5403\u3002", 30.6664, 104.0499, 4.4, 2, List.of("food", "walk", "culture"), List.of()),
+            new Attraction(10L, "\u6b66\u4faf\u7960", "\u6210\u90fd", "culture", "\u4e09\u56fd\u6587\u5316\u4ee3\u8868\u5730\u6807\uff0c\u9002\u5408\u5386\u53f2\u7231\u597d\u8005\u6df1\u5165\u6e38\u89c8\u3002", 30.6467, 104.0433, 4.6, 2, List.of("history", "culture", "garden"), List.of()),
+            new Attraction(11L, "\u9526\u91cc\u53e4\u8857", "\u6210\u90fd", "food", "\u53ef\u8fde\u540c\u6b66\u4faf\u7960\u4e00\u8d77\u5b89\u6392\uff0c\u9002\u5408\u591c\u6e38\u4e0e\u672c\u5730\u7f8e\u98df\u4f53\u9a8c\u3002", 30.6458, 104.0420, 4.5, 2, List.of("food", "shopping", "nightview"), List.of()),
+            new Attraction(12L, "\u6210\u90fd\u5927\u718a\u732b\u7e41\u80b2\u7814\u7a76\u57fa\u5730", "\u6210\u90fd", "wildlife", "\u9002\u5408\u5bb6\u5ead\u548c\u52a8\u7269\u7231\u597d\u8005\uff0c\u53ef\u89c2\u5bdf\u5927\u718a\u732b\u65e5\u5e38\u6d3b\u52a8\u3002", 30.7338, 104.1464, 4.8, 4, List.of("family", "nature", "animal"), List.of())
     );
 
+    @Autowired
     public TravelPlanningService(AiPlanGenerationService aiPlanGenerationService,
                                  AmapPoiService amapPoiService) {
         this.aiPlanGenerationService = aiPlanGenerationService;
         this.amapPoiService = amapPoiService;
+    }
+
+    public TravelPlanningService(AiPlanGenerationService aiPlanGenerationService) {
+        this(aiPlanGenerationService, null);
     }
 
     public List<Destination> getDestinations() {
@@ -103,32 +84,32 @@ public class TravelPlanningService {
     }
 
     public PlanResponse createPlan(PlanRequest request) {
-        int days = normalizeDays(request);
-        LocalDate startDate = normalizeStartDate(request.startDate());
-        Destination destination = resolveStandardDestination(request.city(), request.interests());
-
-        if (hasManualRequests(request.manualDays())) {
-            List<DaySelection> selections = buildManualSelections(destination, startDate, days, request.manualDays());
-            return savePlan(destination, startDate, days, selections);
-        }
-
-        List<Attraction> candidates = resolveCandidateAttractions(destination.city(), request.interests(), days);
-
-        List<DaySelection> selections = new ArrayList<>();
-        int dailyTarget = determineDailyAttractionTarget(candidates);
-        Set<Long> usedAttractionIds = new LinkedHashSet<>();
-        Set<String> usedAttractionNames = new LinkedHashSet<>();
-        for (int day = 1; day <= days; day++) {
-            List<Attraction> dayAttractions = new ArrayList<>();
-            fillFromFallbackCandidates(candidates, day, usedAttractionIds, usedAttractionNames, dayAttractions, dailyTarget);
-            usedAttractionIds.addAll(dayAttractions.stream().map(Attraction::id).toList());
-            usedAttractionNames.addAll(dayAttractions.stream().map(attraction -> normalizeAttractionName(attraction.name())).toList());
-            selections.add(new DaySelection(day, "第" + day + "天 · " + destination.city(), null, dayAttractions));
-        }
-
-        return savePlan(destination, startDate, days, selections);
+        PreparedStandardPlan preparedPlan = prepareStandardPlan(request);
+        return savePlan(
+                preparedPlan.destination(),
+                preparedPlan.startDate(),
+                preparedPlan.days(),
+                preparedPlan.selections(),
+                preparedPlan.allowSupplementalAttractions(),
+                preparedPlan.preserveManualInput()
+        );
     }
-
+    public PlanResponse previewStandardPlan(PlanRequest request, int completedDays) {
+        PreparedStandardPlan preparedPlan = prepareStandardPlan(request);
+        int visibleDays = Math.max(1, Math.min(completedDays, preparedPlan.days()));
+        return buildPlanResponse(
+                -1L,
+                preparedPlan.destination(),
+                preparedPlan.startDate(),
+                preparedPlan.days(),
+                new ArrayList<>(preparedPlan.selections().subList(0, visibleDays)),
+                preparedPlan.allowSupplementalAttractions(),
+                preparedPlan.preserveManualInput()
+        );
+    }
+    public int getPlanDays(PlanRequest request) {
+        return normalizeDays(request);
+    }
     public PlanResponse createAiPlan(PlanRequest request) {
         String requestedCity = normalizeRequestedCity(request.city());
         Destination supportedDestination = findSupportedDestination(requestedCity);
@@ -206,42 +187,221 @@ public class TravelPlanningService {
         );
     }
 
+    public PlanResponse applyEdits(PlanEditRequest request) {
+        EditedPlanContext context = normalizeEditedPlan(request);
+        return savePlan(context.destination(), context.startDate(), context.days(), context.selections(), false, true);
+    }
+
+    public PlanResponse previewEditedPlan(PlanEditRequest request) {
+        EditedPlanContext context = normalizeEditedPlan(request);
+        return buildPlanResponse(-1L, context.destination(), context.startDate(), context.days(), context.selections(), false, true);
+    }
+
+    public PlanResponse optimizeEditedPlan(PlanOptimizeRequest request) {
+        if (request == null || request.plan() == null) {
+            throw new IllegalArgumentException("Plan data is required for AI optimization");
+        }
+
+        EditedPlanContext context = normalizeEditedPlan(request.plan());
+        List<Attraction> candidates = collectCandidateAttractions(
+                request.plan().itinerary(),
+                context.destination().city(),
+                request.interests(),
+                context.days()
+        );
+
+        AiPlanDraft draft = aiPlanGenerationService.optimizePlan(request, context.destination(), candidates, context.days());
+        List<DaySelection> selections = buildAiSelections(context.destination(), candidates, context.days(), draft);
+        return savePlan(context.destination(), context.startDate(), context.days(), selections, false, true);
+    }
+
+    private EditedPlanContext normalizeEditedPlan(PlanEditRequest request) {
+        if (request == null || request.destination() == null) {
+            throw new IllegalArgumentException("Edited plan destination is required");
+        }
+        int days = Math.max(1, request.days());
+        LocalDate startDate = normalizeStartDate(request.startDate());
+        Destination destination = normalizeEditedDestination(request.destination(), request.itinerary());
+        List<DaySelection> selections = buildSelectionsFromEditedPlan(request.itinerary(), destination, days, startDate);
+        return new EditedPlanContext(destination, startDate, days, selections);
+    }
+
     private PlanResponse savePlan(Destination destination,
                                   LocalDate startDate,
                                   int days,
                                   List<DaySelection> selections) {
+        return savePlan(destination, startDate, days, selections, true, false);
+    }
+    private PlanResponse savePlan(Destination destination,
+                                  LocalDate startDate,
+                                  int days,
+                                  List<DaySelection> selections,
+                                  boolean allowSupplementalAttractions,
+                                  boolean preserveManualInput) {
+        long planId = planIdGenerator.getAndIncrement();
+        PlanResponse response = buildPlanResponse(
+                planId,
+                destination,
+                startDate,
+                days,
+                selections,
+                allowSupplementalAttractions,
+                preserveManualInput
+        );
+        SavedPlan savedPlan = new SavedPlan(planId, destination, startDate, days, response.itinerary(), LocalDateTime.now());
+        savedPlans.put(planId, savedPlan);
+        return response;
+    }
+
+    private Destination normalizeEditedDestination(Destination requestedDestination, List<ItineraryDay> itinerary) {
+        String city = normalizeRequestedCity(requestedDestination.city());
+        Destination supportedDestination = findSupportedDestination(city);
+        if (supportedDestination != null) {
+            return supportedDestination;
+        }
+        if (hasValidCoordinates(requestedDestination.latitude(), requestedDestination.longitude())) {
+            return new Destination(
+                    city,
+                    defaultText(requestedDestination.country()),
+                    requestedDestination.latitude(),
+                    requestedDestination.longitude(),
+                    defaultText(requestedDestination.bestSeason()),
+                    defaultText(requestedDestination.summary())
+            );
+        }
+
+        Attraction firstValidAttraction = (itinerary == null ? List.<Attraction>of() : itinerary.stream()
+                .flatMap(day -> day.attractions().stream())
+                .filter(attraction -> hasValidCoordinates(attraction.latitude(), attraction.longitude()))
+                .toList()).stream().findFirst().orElse(null);
+
+        if (firstValidAttraction != null) {
+            return new Destination(
+                    city,
+                    defaultText(requestedDestination.country()),
+                    firstValidAttraction.latitude(),
+                    firstValidAttraction.longitude(),
+                    defaultText(requestedDestination.bestSeason()),
+                    defaultText(requestedDestination.summary())
+            );
+        }
+        return resolveStandardDestination(city, List.of());
+    }
+
+    private boolean hasValidCoordinates(double latitude, double longitude) {
+        return Double.isFinite(latitude)
+                && Double.isFinite(longitude)
+                && Math.abs(latitude) <= 90
+                && Math.abs(longitude) <= 180
+                && !(latitude == 0 && longitude == 0);
+    }
+
+    private List<DaySelection> buildSelectionsFromEditedPlan(List<ItineraryDay> itinerary,
+                                                             Destination destination,
+                                                             int days,
+                                                             LocalDate startDate) {
+        Map<Integer, ItineraryDay> dayMap = new LinkedHashMap<>();
+        if (itinerary != null) {
+            for (ItineraryDay day : itinerary) {
+                if (day != null && day.day() >= 1 && day.day() <= days) {
+                    dayMap.put(day.day(), day);
+                }
+            }
+        }
+
+        List<DaySelection> selections = new ArrayList<>();
+        for (int dayNumber = 1; dayNumber <= days; dayNumber++) {
+            ItineraryDay currentDay = dayMap.get(dayNumber);
+            String title = currentDay != null && hasText(currentDay.title())
+                    ? currentDay.title()
+                    : "%s · 第%d天".formatted(startDate.plusDays(dayNumber - 1L), dayNumber);
+            String theme = currentDay != null && hasText(currentDay.theme()) ? currentDay.theme() : "";
+            List<Attraction> attractionsForDay = currentDay == null || currentDay.attractions() == null
+                    ? List.of()
+                    : currentDay.attractions();
+            selections.add(new DaySelection(dayNumber, title, theme, attractionsForDay));
+        }
+        return selections;
+    }
+
+    private List<Attraction> collectCandidateAttractions(List<ItineraryDay> itinerary,
+                                                         String city,
+                                                         List<String> interests,
+                                                         int days) {
+        Map<String, Attraction> deduped = new LinkedHashMap<>();
+        if (itinerary != null) {
+            for (ItineraryDay day : itinerary) {
+                if (day == null || day.attractions() == null) {
+                    continue;
+                }
+                for (Attraction attraction : day.attractions()) {
+                    if (attraction == null || !hasText(attraction.name())) {
+                        continue;
+                    }
+                    deduped.putIfAbsent(normalizeAttractionName(attraction.name()), attraction);
+                }
+            }
+        }
+
+        if (deduped.isEmpty()) {
+            return resolveCandidateAttractions(city, interests, days);
+        }
+        return new ArrayList<>(deduped.values());
+    }
+    private PlanResponse buildPlanResponse(Long planId,
+                                           Destination destination,
+                                           LocalDate startDate,
+                                           int days,
+                                           List<DaySelection> selections,
+                                           boolean allowSupplementalAttractions,
+                                           boolean preserveManualInput) {
         List<ItineraryDay> itinerary = selections.stream()
                 .map(selection -> {
-                    List<Attraction> enrichedAttractions = ensureCityAttractions(destination.city(), selection.attractions());
+                    List<Attraction> resolvedAttractions = resolveDayAttractions(
+                            destination.city(),
+                            selection.attractions(),
+                            allowSupplementalAttractions,
+                            preserveManualInput
+                    );
                     return new ItineraryDay(
                             selection.day(),
                             selection.title(),
                             selection.theme() == null || selection.theme().isBlank()
-                                    ? buildTheme(enrichedAttractions)
+                                    ? buildTheme(resolvedAttractions)
                                     : selection.theme(),
-                            estimateDistance(enrichedAttractions),
-                            enrichedAttractions
+                            estimateDistance(resolvedAttractions),
+                            resolvedAttractions
                     );
                 })
                 .toList();
-
-        long planId = planIdGenerator.getAndIncrement();
-        SavedPlan savedPlan = new SavedPlan(planId, destination, startDate, days, itinerary, LocalDateTime.now());
-        savedPlans.put(planId, savedPlan);
         return new PlanResponse(planId, destination, startDate, days, itinerary);
     }
-
     private List<Attraction> ensureCityAttractions(String city, List<Attraction> requestedAttractions) {
+        return resolveDayAttractions(city, requestedAttractions, true, false);
+    }
+    private List<Attraction> resolveDayAttractions(String city,
+                                                   List<Attraction> requestedAttractions,
+                                                   boolean allowSupplementalAttractions,
+                                                   boolean preserveManualInput) {
+        if (amapPoiService == null) {
+            return requestedAttractions == null ? List.of() : new ArrayList<>(requestedAttractions);
+        }
         List<Attraction> enrichedAttractions = amapPoiService.enrichAttractions(city, requestedAttractions);
         Map<String, Attraction> deduped = new LinkedHashMap<>();
         for (Attraction attraction : enrichedAttractions) {
             deduped.putIfAbsent(normalizeAttractionName(attraction.name()), attraction);
         }
-
+        if (preserveManualInput && requestedAttractions != null) {
+            for (Attraction attraction : requestedAttractions) {
+                deduped.putIfAbsent(normalizeAttractionName(attraction.name()), attraction);
+            }
+        }
+        if (!allowSupplementalAttractions) {
+            return new ArrayList<>(deduped.values());
+        }
         int targetCount = requestedAttractions == null || requestedAttractions.isEmpty()
                 ? MIN_ATTRACTIONS_PER_DAY
                 : Math.max(MIN_ATTRACTIONS_PER_DAY, requestedAttractions.size());
-
         if (deduped.size() < targetCount) {
             List<String> interests = requestedAttractions == null ? List.of() : requestedAttractions.stream()
                     .flatMap(attraction -> attraction.tags().stream())
@@ -258,15 +418,16 @@ public class TravelPlanningService {
                 deduped.putIfAbsent(normalizeAttractionName(attraction.name()), attraction);
             }
         }
-
         return new ArrayList<>(deduped.values());
     }
-
     private Destination resolveStandardDestination(String city, List<String> interests) {
         String normalizedCity = normalizeRequestedCity(city);
         Destination destination = findSupportedDestination(normalizedCity);
         if (destination != null) {
             return destination;
+        }
+        if (amapPoiService == null) {
+            return new Destination(normalizedCity, "", 0, 0, "", "");
         }
         List<Attraction> seed = amapPoiService.searchSupplementalAttractions(normalizedCity, interests, Set.of(), 1);
         if (!seed.isEmpty()) {
@@ -277,10 +438,10 @@ public class TravelPlanningService {
                     first.latitude(),
                     first.longitude(),
                     "",
-                    "根据你手动选择的城市与景点愿望清单整理路线。"
+                    "Route suggestions based on the city and attraction wishlist you selected."
             );
         }
-        return new Destination(normalizedCity, "", 0, 0, "", "根据你手动选择的城市与景点愿望清单整理路线。");
+        return new Destination(normalizedCity, "", 0, 0, "", "Route suggestions based on the city and attraction wishlist you selected.");
     }
 
     private Destination findSupportedDestination(String city) {
@@ -306,20 +467,22 @@ public class TravelPlanningService {
         }
         int requiredCount = Math.min(days * RECOMMENDED_ATTRACTIONS_PER_DAY, days * MAX_ATTRACTIONS_PER_DAY);
         if (candidates.isEmpty()) {
-            candidates = amapPoiService.searchSupplementalAttractions(city, interests, Set.of(), requiredCount);
+            candidates = amapPoiService == null
+                    ? List.of()
+                    : amapPoiService.searchSupplementalAttractions(city, interests, Set.of(), requiredCount);
         }
         if (candidates.isEmpty()) {
             throw new IllegalStateException("No attractions available for " + city);
         }
 
-        List<Attraction> enrichedCandidates = amapPoiService.enrichAttractions(city, candidates);
+        List<Attraction> enrichedCandidates = amapPoiService == null ? candidates : amapPoiService.enrichAttractions(city, candidates);
         Map<String, Attraction> deduped = new LinkedHashMap<>();
         for (Attraction attraction : enrichedCandidates) {
             deduped.put(normalizeAttractionName(attraction.name()), attraction);
         }
 
         if (deduped.size() < requiredCount) {
-            List<Attraction> supplemental = amapPoiService.searchSupplementalAttractions(
+            List<Attraction> supplemental = amapPoiService == null ? List.of() : amapPoiService.searchSupplementalAttractions(
                     city,
                     interests,
                     deduped.keySet(),
@@ -331,6 +494,37 @@ public class TravelPlanningService {
         }
 
         return new ArrayList<>(deduped.values());
+    }
+
+    private PreparedStandardPlan prepareStandardPlan(PlanRequest request) {
+        int days = normalizeDays(request);
+        LocalDate startDate = normalizeStartDate(request.startDate());
+        Destination destination = resolveStandardDestination(request.city(), request.interests());
+        boolean manualMode = hasManualRequests(request.manualDays());
+        boolean allowSupplementalAttractions = Boolean.TRUE.equals(request.allowSupplementalAttractions());
+        if (manualMode) {
+            return new PreparedStandardPlan(
+                    destination,
+                    startDate,
+                    days,
+                    buildManualSelections(destination, startDate, days, request.manualDays()),
+                    allowSupplementalAttractions,
+                    true
+            );
+        }
+        List<Attraction> candidates = resolveCandidateAttractions(destination.city(), request.interests(), days);
+        List<DaySelection> selections = new ArrayList<>();
+        int dailyTarget = determineDailyAttractionTarget(candidates);
+        Set<Long> usedAttractionIds = new LinkedHashSet<>();
+        Set<String> usedAttractionNames = new LinkedHashSet<>();
+        for (int day = 1; day <= days; day++) {
+            List<Attraction> dayAttractions = new ArrayList<>();
+            fillFromFallbackCandidates(candidates, day, usedAttractionIds, usedAttractionNames, dayAttractions, dailyTarget);
+            usedAttractionIds.addAll(dayAttractions.stream().map(Attraction::id).toList());
+            usedAttractionNames.addAll(dayAttractions.stream().map(attraction -> normalizeAttractionName(attraction.name())).toList());
+            selections.add(new DaySelection(day, "\u7b2c " + day + " \u5929 \u00b7 " + destination.city(), null, dayAttractions));
+        }
+        return new PreparedStandardPlan(destination, startDate, days, selections, true, false);
     }
 
     private List<DaySelection> buildAiSelections(Destination destination,
@@ -380,8 +574,7 @@ public class TravelPlanningService {
             selections.add(new DaySelection(
                     day,
                     dayDraft != null && dayDraft.title() != null && !dayDraft.title().isBlank()
-                            ? dayDraft.title()
-                            : "第" + day + "天 · " + destination.city(),
+                            ? dayDraft.title() : "\u7b2c " + day + " \u5929 \u00b7 " + destination.city(),
                     dayDraft == null ? null : dayDraft.theme(),
                     selected
             ));
@@ -423,7 +616,7 @@ public class TravelPlanningService {
             usedAttractionNames.addAll(generatedAttractions.stream().map(attraction -> normalizeAttractionName(attraction.name())).toList());
             selections.add(new DaySelection(
                     day,
-                    dayDraft != null && hasText(dayDraft.title()) ? dayDraft.title().trim() : "第" + day + "天 · " + destination.city(),
+                    dayDraft != null && hasText(dayDraft.title()) ? dayDraft.title().trim() : "\u7b2c " + day + " \u5929 \u00b7 " + destination.city(),
                     dayDraft == null ? null : dayDraft.theme(),
                     generatedAttractions
             ));
@@ -463,7 +656,7 @@ public class TravelPlanningService {
             }
             selections.add(new DaySelection(
                     day,
-                    dayDraft != null && hasText(dayDraft.title()) ? dayDraft.title().trim() : "第" + day + "天 · " + destination.city(),
+                    dayDraft != null && hasText(dayDraft.title()) ? dayDraft.title().trim() : "\u7b2c " + day + " \u5929 \u00b7 " + destination.city(),
                     dayDraft == null ? null : dayDraft.theme(),
                     generatedAttractions
             ));
@@ -483,44 +676,24 @@ public class TravelPlanningService {
                 }
             }
         }
-
         List<DaySelection> selections = new ArrayList<>();
         Set<String> usedAttractionNames = new LinkedHashSet<>();
         for (int day = 1; day <= days; day++) {
             ManualDayRequest manualDay = manualDayMap.get(day);
             LocalDate currentDate = startDate.plusDays(day - 1L);
             List<Attraction> requested = buildManualRequestedAttractions(destination.city(), manualDay);
-            List<Attraction> selected = ensureCityAttractions(destination.city(), requested).stream()
+            List<Attraction> selected = requested.stream()
                     .filter(attraction -> usedAttractionNames.add(normalizeAttractionName(attraction.name())))
                     .toList();
-
-            if (selected.size() < MIN_ATTRACTIONS_PER_DAY) {
-                List<Attraction> supplemental = amapPoiService.searchSupplementalAttractions(
-                        destination.city(),
-                        List.of(),
-                        usedAttractionNames,
-                        MIN_ATTRACTIONS_PER_DAY - selected.size()
-                );
-                List<Attraction> merged = new ArrayList<>(selected);
-                for (Attraction attraction : supplemental) {
-                    String normalizedName = normalizeAttractionName(attraction.name());
-                    if (usedAttractionNames.add(normalizedName)) {
-                        merged.add(attraction);
-                    }
-                }
-                selected = merged;
-            }
-
             selections.add(new DaySelection(
                     day,
-                    "%s · 第%d天".formatted(currentDate, day),
-                    selected.isEmpty() ? "根据你的景点意向补全路线" : buildTheme(selected),
+                    "%s \u00b7 \u7b2c%d\u5929".formatted(currentDate, day),
+                    selected.isEmpty() ? "\u7b49\u5f85\u586b\u5199\u5f53\u5929\u666f\u70b9" : buildTheme(selected),
                     selected
             ));
         }
         return selections;
     }
-
     private List<Attraction> buildManualRequestedAttractions(String city, ManualDayRequest manualDay) {
         if (manualDay == null || manualDay.attractions() == null) {
             return List.of();
@@ -535,12 +708,12 @@ public class TravelPlanningService {
                     attractionName.trim(),
                     city,
                     "sight",
-                    "手动输入的意向景点，系统将尝试匹配真实 POI 并完善顺序与换乘。",
+                    "\u7528\u6237\u624b\u586b\u666f\u70b9\uff0c\u7cfb\u7edf\u4f1a\u5c3d\u91cf\u5339\u914d\u771f\u5b9e POI\uff0c\u5e76\u8865\u5145\u6392\u5e8f\u4e0e\u4ea4\u901a\u4fe1\u606f\u3002",
                     0,
                     0,
                     4.4,
                     2,
-                    List.of("manual"),
+                    List.of("\u624b\u586b"),
                     List.of()
             ));
         }
@@ -627,26 +800,26 @@ public class TravelPlanningService {
         }
         return List.of(new Attraction(
                 generatedAttractionIdGenerator.getAndIncrement(),
-                destination.city() + " 市中心漫步区",
+                destination.city() + " \u57ce\u5e02\u6f2b\u6b65",
                 destination.city(),
                 "citywalk",
-                "AI 未返回足够细的景点信息，因此先生成一个可展示的核心停留点。",
+                "\u0041\u0049 \u751f\u6210\u8fc7\u7a0b\u4e2d\u6682\u672a\u8865\u5168\u8be6\u60c5\u65f6\u7684\u515c\u5e95\u666f\u70b9\u3002",
                 destination.latitude(),
                 destination.longitude(),
                 4.3,
                 2,
-                List.of("ai生成", "漫步"),
+                List.of("ai-generated", "walk"),
                 List.of()
         ));
     }
 
     private void addGeneratedFallbackStops(Destination destination, int day, List<Attraction> results) {
         List<String> fallbackNames = List.of(
-                destination.city() + " 城市地标区",
-                destination.city() + " 老城漫步线",
-                destination.city() + " 河岸景观带",
-                destination.city() + " 本地生活街区",
-                destination.city() + " 夜景观景点"
+                destination.city() + " \u57ce\u5e02\u5730\u6807\u533a",
+                destination.city() + " \u8001\u57ce\u6f2b\u6b65\u7ebf",
+                destination.city() + " \u6cb3\u5cb8\u666f\u89c2\u5e26",
+                destination.city() + " \u672c\u5730\u7f8e\u98df\u8857",
+                destination.city() + " \u591c\u666f\u89c2\u666f\u70b9"
         );
         List<String> fallbackCategories = List.of("landmark", "citywalk", "view", "food", "nightview");
 
@@ -657,7 +830,7 @@ public class TravelPlanningService {
                     fallbackNames.get(index),
                     destination.city(),
                     fallbackCategories.get(index),
-                    "为补足每日行程节奏而生成的推荐停留点，适合串联成更完整的一天路线。",
+                    "\u7528\u4e8e\u8865\u8db3\u5f53\u5929\u8def\u7ebf\u7684\u515c\u5e95\u666f\u70b9\u3002",
                     destination.latitude() + day * 0.01 + index * 0.005,
                     destination.longitude() + day * 0.01 + index * 0.005,
                     4.4,
@@ -679,7 +852,7 @@ public class TravelPlanningService {
         long id = draft.id() == null ? generatedAttractionIdGenerator.getAndIncrement() : draft.id();
         String city = hasText(draft.city()) ? draft.city().trim() : destination == null ? "" : destination.city();
         String category = hasText(draft.category()) ? draft.category().trim() : "sight";
-        String description = hasText(draft.description()) ? draft.description().trim() : "AI 生成景点";
+        String description = hasText(draft.description()) ? draft.description().trim() : "\u0041\u0049 \u751f\u6210\u666f\u70b9";
         double fallbackLatitude = destination == null ? 0 : destination.latitude() + day * 0.01 + index * 0.005;
         double fallbackLongitude = destination == null ? 0 : destination.longitude() + day * 0.01 + index * 0.005;
         double latitude = draft.latitude() == null ? fallbackLatitude : draft.latitude();
@@ -780,15 +953,24 @@ public class TravelPlanningService {
     private String normalizeRequestedCity(String city) {
         String normalizedCity = city == null ? "" : city.trim();
         if (normalizedCity.isBlank()) {
-            throw new IllegalArgumentException("请输入目的地。");
+            throw new IllegalArgumentException("Please enter a destination city.");
         }
-        return normalizedCity;
+        return switch (normalizedCity.toLowerCase(Locale.ROOT)) {
+            case "shanghai" -> "\u4e0a\u6d77";
+            case "tokyo" -> "\u4e1c\u4eac";
+            case "chengdu" -> "\u6210\u90fd";
+            case "beijing" -> "\u5317\u4eac";
+            case "guangzhou" -> "\u5e7f\u5dde";
+            case "shenzhen" -> "\u6df1\u5733";
+            case "hangzhou" -> "\u676d\u5dde";
+            default -> normalizedCity;
+        };
     }
 
     private String supportedCitiesText() {
         return destinations.stream()
                 .map(Destination::city)
-                .collect(Collectors.joining("、"));
+                .collect(Collectors.joining(", "));
     }
 
     private boolean hasText(String value) {
@@ -808,25 +990,25 @@ public class TravelPlanningService {
                 .collect(Collectors.groupingBy(Attraction::category, Collectors.counting()));
         return categories.entrySet().stream()
                 .max(Map.Entry.comparingByValue())
-                .map(entry -> localizeCategory(entry.getKey()) + "主题路线")
-                .orElse("轻松城市路线");
+                .map(entry -> localizeCategory(entry.getKey()) + "\u4e3b\u9898\u8def\u7ebf")
+                .orElse("\u8f7b\u677e\u57ce\u5e02\u8def\u7ebf");
     }
 
     private String localizeCategory(String category) {
         return switch (category == null ? "" : category.toLowerCase(Locale.ROOT)) {
-            case "culture" -> "文化";
-            case "food" -> "美食";
-            case "history" -> "历史";
-            case "nature" -> "自然";
-            case "walk", "citywalk" -> "漫步";
-            case "view", "viewpoint" -> "观景";
-            case "museum" -> "博物馆";
-            case "garden" -> "园林";
-            case "landmark" -> "地标";
-            case "park" -> "公园";
-            case "wildlife" -> "自然生态";
-            case "sight" -> "景点";
-            default -> category == null || category.isBlank() ? "综合" : category;
+            case "culture" -> "\u6587\u5316";
+            case "food" -> "\u7f8e\u98df";
+            case "history" -> "\u5386\u53f2";
+            case "nature" -> "\u81ea\u7136";
+            case "walk", "citywalk" -> "\u6f2b\u6b65";
+            case "view", "viewpoint" -> "\u89c2\u666f";
+            case "museum" -> "\u535a\u7269\u9986";
+            case "garden" -> "\u56ed\u6797";
+            case "landmark" -> "\u5730\u6807";
+            case "park" -> "\u516c\u56ed";
+            case "wildlife" -> "\u81ea\u7136\u751f\u6001";
+            case "sight" -> "\u666f\u70b9";
+            default -> category == null || category.isBlank() ? "\u7efc\u5408" : category;
         };
     }
 
@@ -861,6 +1043,24 @@ public class TravelPlanningService {
     ) {
     }
 
+    private record PreparedStandardPlan(
+            Destination destination,
+            LocalDate startDate,
+            int days,
+            List<DaySelection> selections,
+            boolean allowSupplementalAttractions,
+            boolean preserveManualInput
+    ) {
+    }
+
+    private record EditedPlanContext(
+            Destination destination,
+            LocalDate startDate,
+            int days,
+            List<DaySelection> selections
+    ) {
+    }
+
     private record SavedPlan(
             Long planId,
             Destination destination,
@@ -871,3 +1071,6 @@ public class TravelPlanningService {
     ) {
     }
 }
+
+
+

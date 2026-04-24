@@ -2,6 +2,8 @@ package com.yourcompany.validator.travelplanner.controller;
 
 import com.yourcompany.validator.travelplanner.config.AmapProperties;
 import com.yourcompany.validator.travelplanner.dto.AmapConfigResponse;
+import com.yourcompany.validator.travelplanner.dto.PlanEditRequest;
+import com.yourcompany.validator.travelplanner.dto.PlanOptimizeRequest;
 import com.yourcompany.validator.travelplanner.dto.PlanRequest;
 import com.yourcompany.validator.travelplanner.dto.PlanResponse;
 import com.yourcompany.validator.travelplanner.dto.PlanRouteResponse;
@@ -10,6 +12,7 @@ import com.yourcompany.validator.travelplanner.model.Attraction;
 import com.yourcompany.validator.travelplanner.model.Destination;
 import com.yourcompany.validator.travelplanner.service.AmapRoutingService;
 import com.yourcompany.validator.travelplanner.service.AiPlanStreamingService;
+import com.yourcompany.validator.travelplanner.service.StandardPlanStreamingService;
 import com.yourcompany.validator.travelplanner.service.TravelPlanningService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -31,15 +34,18 @@ public class TravelController {
     private final TravelPlanningService travelPlanningService;
     private final AmapRoutingService amapRoutingService;
     private final AiPlanStreamingService aiPlanStreamingService;
+    private final StandardPlanStreamingService standardPlanStreamingService;
     private final AmapProperties amapProperties;
 
     public TravelController(TravelPlanningService travelPlanningService,
                             AmapRoutingService amapRoutingService,
                             AiPlanStreamingService aiPlanStreamingService,
+                            StandardPlanStreamingService standardPlanStreamingService,
                             AmapProperties amapProperties) {
         this.travelPlanningService = travelPlanningService;
         this.amapRoutingService = amapRoutingService;
         this.aiPlanStreamingService = aiPlanStreamingService;
+        this.standardPlanStreamingService = standardPlanStreamingService;
         this.amapProperties = amapProperties;
     }
 
@@ -61,9 +67,30 @@ public class TravelController {
         return travelPlanningService.createPlan(request);
     }
 
+    @PostMapping("/plans/edit")
+    public PlanResponse applyEdits(@RequestBody PlanEditRequest request) {
+        return travelPlanningService.applyEdits(request);
+    }
+
+    @PostMapping("/plans/routes-preview")
+    public PlanRouteResponse previewRoutes(@RequestBody PlanEditRequest request) {
+        PlanResponse normalizedPlan = travelPlanningService.previewEditedPlan(request);
+        return amapRoutingService.buildRoutes(normalizedPlan);
+    }
+
+    @PostMapping(value = "/plans/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter planStream(@RequestBody PlanRequest request) {
+        return standardPlanStreamingService.streamPlan(request);
+    }
+
     @PostMapping("/ai/plans")
     public PlanResponse aiPlan(@RequestBody PlanRequest request) {
         return travelPlanningService.createAiPlan(request);
+    }
+
+    @PostMapping("/ai/plans/optimize")
+    public PlanResponse optimizePlan(@RequestBody PlanOptimizeRequest request) {
+        return travelPlanningService.optimizeEditedPlan(request);
     }
 
     @PostMapping(value = "/ai/plans/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

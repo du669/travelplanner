@@ -52,7 +52,7 @@
             <div ref="mapContainerRef" class="map-canvas"></div>
             <div v-if="isPreviewComputing" class="map-loading-mask">
               <div class="map-loading-card">
-                <strong>AI 正在辅助计算</strong>
+                <strong>正在刷新路线</strong>
                 <span>{{ computingMessage }}</span>
               </div>
             </div>
@@ -80,25 +80,15 @@
       </aside>
 
       <section class="editor-side-column">
-        <section class="optimizer-panel">
-          <div class="optimizer-head">
-            <div>
-              <small>进一步优化</small>
-              <h2>AI 优化当前草稿</h2>
-            </div>
-            <div class="optimizer-actions">
-              <el-button type="primary" :loading="saving" @click="savePlanEdits">保存编辑</el-button>
-              <el-button type="success" :loading="optimizing" @click="optimizeCurrentPlan">AI 优化</el-button>
-            </div>
+        <section class="editor-actions-panel">
+          <div>
+            <small>直接编辑</small>
+            <h2>手动增删并调整景点</h2>
+            <p>这里不再提供 AI 优化弹窗，你可以直接新增景点、改顺序、跨天移动，然后保存当前草稿。</p>
           </div>
-
-          <el-input
-            v-model="optimizationInstruction"
-            type="textarea"
-            :rows="3"
-            resize="none"
-            placeholder="例如：把第 2 天节奏放慢一些，减少折返，并把夜景集中到最后一天。"
-          />
+          <div class="editor-actions-row">
+            <el-button type="primary" :loading="saving" @click="savePlanEdits">保存编辑</el-button>
+          </div>
         </section>
 
         <section class="day-stack">
@@ -201,9 +191,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
-import { applyPlanEdits, getPlanRoutes, getSavedPlan, optimizePlan, previewPlanRoutes } from './api/travel'
+import { applyPlanEdits, getMapConfig, getPlanRoutes, getSavedPlan, previewPlanRoutes } from './api/travel'
 
 const EDIT_DRAFT_STORAGE_KEY = 'travelplanner-edit-draft'
 
@@ -212,11 +200,10 @@ const routeData = ref(null)
 const errorMessage = ref('')
 const loading = ref(false)
 const saving = ref(false)
-const optimizing = ref(false)
 const exportLoading = ref(false)
-const optimizationInstruction = ref('')
 const exportSurfaceRef = ref(null)
 const mapContainerRef = ref(null)
+const mapConfig = ref(null)
 const newAttractionInputs = ref({})
 const activeDayFilter = ref('all')
 const activeEditorDay = ref(1)
@@ -224,8 +211,8 @@ const isPreviewComputing = ref(false)
 const computingMessage = ref('正在根据你当前的修改刷新路线和地图。')
 
 let mapInstance = null
-let markerLayer = null
-let lineLayer = null
+let mapOverlays = []
+let amapLoaderPromise
 let previewTimer = null
 let previewRequestVersion = 0
 
@@ -307,7 +294,7 @@ const buildEditPayload = () => ({
     distanceKm: day.distanceKm || 0,
     attractions: (day.attractions || []).map((attraction, attractionIndex) => ({
       ...attraction,
-      id: attraction.id ?? `editor-${day.day}-${attractionIndex}-${Date.now()}`
+      id: attraction.id ?? -(Date.now() + day.day * 100 + attractionIndex)
     }))
   }))
 })
@@ -406,7 +393,7 @@ const queuePreviewRefresh = () => {
   window.clearTimeout(previewTimer)
   const requestVersion = ++previewRequestVersion
   isPreviewComputing.value = true
-  computingMessage.value = 'AI 正在辅助计算当前草稿的路线与地图。'
+  computingMessage.value = '正在根据你当前的修改刷新路线和地图。'
   previewTimer = window.setTimeout(async () => {
     try {
       const preview = await previewPlanRoutes(buildEditPayload())
@@ -459,7 +446,7 @@ const addAttractionToDay = (dayNumber) => {
   if (!day || !rawName) return
 
   day.attractions.push({
-    id: `manual-${dayNumber}-${Date.now()}`,
+    id: -(Date.now() + dayNumber),
     name: rawName,
     city: cityName.value,
     category: 'sight',
@@ -526,33 +513,6 @@ const savePlanEdits = async () => {
     errorMessage.value = normalizeRequestError(error)
   } finally {
     saving.value = false
-  }
-}
-
-const optimizeCurrentPlan = async () => {
-  if (!plan.value) return
-  optimizing.value = true
-  isPreviewComputing.value = true
-  computingMessage.value = 'AI 正在优化你当前编辑后的行程。'
-  errorMessage.value = ''
-  try {
-    const optimizedPlan = await optimizePlan({
-      plan: buildEditPayload(),
-      interests: [],
-      instruction: optimizationInstruction.value.trim()
-    })
-    plan.value = cloneValue(optimizedPlan)
-    routeData.value = await getPlanRoutes(optimizedPlan.planId)
-    optimizationInstruction.value = ''
-    persistDraft()
-    const nextUrl = new URL(window.location.href)
-    nextUrl.searchParams.set('planId', optimizedPlan.planId)
-    window.history.replaceState({}, '', nextUrl)
-  } catch (error) {
-    errorMessage.value = normalizeRequestError(error)
-  } finally {
-    optimizing.value = false
-    isPreviewComputing.value = false
   }
 }
 
@@ -623,88 +583,120 @@ const getRouteSummaryForDay = (dayNumber) => {
 }
 
 const getDayColor = (dayNumber = 1) => dayPalette[(dayNumber - 1) % dayPalette.length]
+const getMapStyle = () => 'amap://styles/normal'
+
+const loadAmapSdk = async () => {
+  if (window.AMap) return window.AMap
+  if (amapLoaderPromise) return amapLoaderPromise
+  if (!mapConfig.value?.enabled || !mapConfig.value?.webKey) {
+    throw new Error('服务端尚未配置高德地图 Key')
+  }
+  window._AMapSecurityConfig = { securityJsCode: mapConfig.value.securityJsCode }
+  amapLoaderPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${mapConfig.value.webKey}&plugin=AMap.Scale,AMap.ToolBar`
+    script.async = true
+    script.onload = () => resolve(window.AMap)
+    script.onerror = () => reject(new Error('高德地图 SDK 加载失败'))
+    document.head.appendChild(script)
+  })
+  return amapLoaderPromise
+}
+
+const clearMapOverlays = () => {
+  if (!mapInstance || !mapOverlays.length) return
+  mapInstance.remove(mapOverlays)
+  mapOverlays = []
+}
 
 const destroyMap = () => {
   if (mapInstance) {
-    mapInstance.remove()
+    mapInstance.destroy()
     mapInstance = null
   }
-  markerLayer = null
-  lineLayer = null
+  mapOverlays = []
 }
 
-const ensureMap = async () => {
+const initMap = async () => {
   if (mapInstance || !mapContainerRef.value) return
+  const AMap = await loadAmapSdk()
   await nextTick()
   if (!mapContainerRef.value) return
 
-  mapInstance = L.map(mapContainerRef.value, {
-    zoomControl: true,
-    attributionControl: false
-  }).setView([31.2304, 121.4737], 11)
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19
-  }).addTo(mapInstance)
-
-  markerLayer = L.layerGroup().addTo(mapInstance)
-  lineLayer = L.layerGroup().addTo(mapInstance)
+  mapInstance = new AMap.Map(mapContainerRef.value, {
+    zoom: 11,
+    center: [121.4737, 31.2304],
+    mapStyle: getMapStyle(),
+    animateEnable: true,
+    jogEnable: true
+  })
+  mapInstance.addControl(new AMap.Scale())
+  mapInstance.addControl(new AMap.ToolBar())
 }
 
-const buildMarkerIcon = (dayNumber, stopIndex) =>
-  L.divIcon({
-    className: 'editor-map-marker-wrap',
-    html: `<div class="editor-map-marker" style="background:${getDayColor(dayNumber)}">${dayNumber}-${stopIndex}</div>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17]
-  })
+const createMarkerContent = (dayNumber, stopIndex) =>
+  `<div class="editor-amap-marker" style="background:${getDayColor(dayNumber)}"><span>${dayNumber}-${stopIndex}</span></div>`
 
 const renderMap = async () => {
   if (!plan.value) return
-  await ensureMap()
-  if (!mapInstance || !markerLayer || !lineLayer) return
-
-  markerLayer.clearLayers()
-  lineLayer.clearLayers()
+  await initMap()
+  if (!mapInstance) return
+  clearMapOverlays()
 
   const center = getPlanCenter(plan.value)
   if (!center) return
 
+  const AMap = window.AMap
+  const overlays = []
   const bounds = []
 
   activeDays.value.forEach((day) => {
     const validAttractions = (day.attractions || []).filter((attraction) => isNearPlanCenter(attraction, center))
     validAttractions.forEach((attraction, index) => {
-      const latlng = [Number(attraction.latitude), Number(attraction.longitude)]
-      bounds.push(latlng)
-      L.marker(latlng, { icon: buildMarkerIcon(day.day, index + 1) })
-        .bindPopup(`<strong>${attraction.name}</strong><br/>${displayCategory(attraction.category)}`)
-        .addTo(markerLayer)
+      const position = [Number(attraction.longitude), Number(attraction.latitude)]
+      bounds.push(position)
+      overlays.push(
+        new AMap.Marker({
+          position,
+          content: createMarkerContent(day.day, index + 1),
+          offset: new AMap.Pixel(-18, -40),
+          title: attraction.name
+        })
+      )
     })
 
     const polyline = (routeData.value?.days?.find((route) => route.day === day.day)?.polyline || [])
       .filter((point) => isNearPlanCenter(point, center))
-      .map((point) => [Number(point.latitude), Number(point.longitude)])
+      .map((point) => [Number(point.longitude), Number(point.latitude)])
 
     if (polyline.length > 1) {
       polyline.forEach((point) => bounds.push(point))
-      L.polyline(polyline, {
-        color: getDayColor(day.day),
-        weight: 5,
-        opacity: 0.9
-      }).addTo(lineLayer)
+      overlays.push(
+        new AMap.Polyline({
+          path: polyline,
+          strokeColor: getDayColor(day.day),
+          strokeWeight: 5,
+          strokeOpacity: 0.9,
+          strokeStyle: 'solid'
+        })
+      )
     }
   })
 
-  if (bounds.length > 1) {
-    mapInstance.fitBounds(bounds, { padding: [32, 32] })
-  } else if (bounds.length === 1) {
-    mapInstance.setView(bounds[0], 14)
-  } else {
-    mapInstance.setView([Number(center.latitude), Number(center.longitude)], 12)
+  if (overlays.length) {
+    mapInstance.add(overlays)
+    mapOverlays = overlays
   }
 
-  window.setTimeout(() => mapInstance?.invalidateSize(), 60)
+  if (bounds.length > 1) {
+    mapInstance.setFitView(overlays, false, [32, 32, 32, 32])
+  } else if (bounds.length === 1) {
+    mapInstance.setZoomAndCenter(14, bounds[0], true)
+  } else {
+    mapInstance.setZoomAndCenter(12, [Number(center.longitude), Number(center.latitude)], true)
+  }
+
+  window.setTimeout(() => mapInstance?.resize(), 80)
 }
 
 onMounted(async () => {
@@ -713,6 +705,12 @@ onMounted(async () => {
   if (!planId) {
     errorMessage.value = '缺少 planId，请从主页打开编辑页。'
     return
+  }
+  try {
+    mapConfig.value = await getMapConfig()
+    await initMap()
+  } catch (error) {
+    errorMessage.value = normalizeRequestError(error)
   }
   await loadPlan(planId)
   await renderMap()
@@ -757,7 +755,7 @@ watch(activeDayFilter, () => renderMap())
 
 .editor-hero,
 .map-panel,
-.optimizer-panel,
+.editor-actions-panel,
 .day-card {
   border: 1px solid rgba(213, 225, 221, 0.94);
   border-radius: 28px;
@@ -799,7 +797,7 @@ watch(activeDayFilter, () => renderMap())
 }
 
 .editor-hero-actions,
-.optimizer-actions,
+.editor-actions-row,
 .stop-card-actions,
 .stop-add-row {
   display: flex;
@@ -968,28 +966,27 @@ watch(activeDayFilter, () => renderMap())
   gap: 16px;
 }
 
-.optimizer-panel {
+.editor-actions-panel {
   display: grid;
   gap: 14px;
   padding: 18px;
 }
 
-.optimizer-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.optimizer-head small {
+.editor-actions-panel small {
   color: #728682;
   font-size: 12px;
   font-weight: 700;
 }
 
-.optimizer-head h2 {
+.editor-actions-panel h2 {
   margin: 8px 0 0;
   font-size: 24px;
+}
+
+.editor-actions-panel p {
+  margin: 8px 0 0;
+  color: #637773;
+  line-height: 1.7;
 }
 
 .day-stack {
@@ -1129,12 +1126,7 @@ watch(activeDayFilter, () => renderMap())
   border-color: rgba(225, 176, 168, 0.92);
 }
 
-:deep(.editor-map-marker-wrap) {
-  background: transparent;
-  border: 0;
-}
-
-:deep(.editor-map-marker) {
+:deep(.editor-amap-marker) {
   display: grid;
   place-items: center;
   width: 34px;
@@ -1177,7 +1169,7 @@ watch(activeDayFilter, () => renderMap())
   .day-card-head,
   .day-card-summary,
   .stop-card,
-  .optimizer-head {
+  .editor-actions-row {
     flex-direction: column;
     align-items: flex-start;
   }

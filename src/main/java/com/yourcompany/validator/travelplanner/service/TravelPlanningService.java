@@ -29,10 +29,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 public class TravelPlanningService {
+    private static final Pattern INSTRUCTION_DAY_PATTERN = Pattern.compile("第([一二三四五六七1234567])天([^。；\\n]*)");
     private static final int MIN_ATTRACTIONS_PER_DAY = 3;
     private static final int RECOMMENDED_ATTRACTIONS_PER_DAY = 4;
     private static final int MAX_ATTRACTIONS_PER_DAY = 5;
@@ -212,6 +215,7 @@ public class TravelPlanningService {
 
         AiPlanDraft draft = aiPlanGenerationService.optimizePlan(request, context.destination(), candidates, context.days());
         List<DaySelection> selections = buildAiSelections(context.destination(), candidates, context.days(), draft);
+        applyInstructionConstraints(selections, candidates, request.instruction(), context.days());
         return savePlan(context.destination(), context.startDate(), context.days(), selections, false, true);
     }
 
@@ -343,10 +347,161 @@ public class TravelPlanningService {
             }
         }
 
+        try {
+            List<Attraction> supplementalCandidates = resolveCandidateAttractions(city, interests, days);
+            for (Attraction attraction : supplementalCandidates) {
+                if (attraction == null || !hasText(attraction.name())) {
+                    continue;
+                }
+                deduped.putIfAbsent(normalizeAttractionName(attraction.name()), attraction);
+            }
+        } catch (Exception ignored) {
+        }
+
         if (deduped.isEmpty()) {
-            return resolveCandidateAttractions(city, interests, days);
+            throw new IllegalStateException("No attractions available for " + city);
         }
         return new ArrayList<>(deduped.values());
+    }
+
+    private void applyInstructionConstraints(List<DaySelection> selections,
+                                             List<Attraction> candidates,
+                                             String instruction,
+                                             int days) {
+        if (selections == null || selections.isEmpty() || !hasText(instruction)) {
+            return;
+        }
+
+        Map<Integer, List<String>> requestedByDay = extractRequestedAttractionsByDay(instruction, days);
+        if (requestedByDay.isEmpty()) {
+            return;
+        }
+
+        Map<String, Attraction> candidateByName = new LinkedHashMap<>();
+        if (candidates != null) {
+            for (Attraction attraction : candidates) {
+                if (attraction != null && hasText(attraction.name())) {
+                    candidateByName.putIfAbsent(normalizeAttractionName(attraction.name()), attraction);
+                }
+            }
+        }
+
+        for (Map.Entry<Integer, List<String>> entry : requestedByDay.entrySet()) {
+            int targetDay = entry.getKey();
+            DaySelection targetSelection = selections.stream()
+                    .filter(selection -> selection.day() == targetDay)
+                    .findFirst()
+                    .orElse(null);
+            if (targetSelection == null) {
+                continue;
+            }
+
+            for (String requestedName : entry.getValue()) {
+                String normalizedName = normalizeAttractionName(requestedName);
+                if (!hasText(normalizedName)) {
+                    continue;
+                }
+
+                if (targetSelection.attractions().stream()
+                        .anyMatch(attraction -> normalizeAttractionName(attraction.name()).equals(normalizedName))) {
+                    continue;
+                }
+
+                Attraction matched = removeAttractionFromOtherDays(selections, targetDay, normalizedName);
+                if (matched == null) {
+                    matched = candidateByName.get(normalizedName);
+                }
+                if (matched == null) {
+                    matched = findFuzzyCandidate(candidateByName, normalizedName);
+                }
+                if (matched == null) {
+                    continue;
+                }
+
+                targetSelection.attractions().add(0, matched);
+            }
+        }
+    }
+
+    private Map<Integer, List<String>> extractRequestedAttractionsByDay(String instruction, int days) {
+        Map<Integer, List<String>> result = new LinkedHashMap<>();
+        Matcher matcher = INSTRUCTION_DAY_PATTERN.matcher(instruction);
+        while (matcher.find()) {
+            int day = parseChineseDayToken(matcher.group(1));
+            if (day < 1 || day > days) {
+                continue;
+            }
+            String clause = matcher.group(2);
+            if (!hasText(clause)) {
+                continue;
+            }
+
+            String normalizedClause = clause
+                    .replace("新增", " ")
+                    .replace("加入", " ")
+                    .replace("添加", " ")
+                    .replace("安排", " ")
+                    .replace("放到", " ")
+                    .replace("放在", " ")
+                    .replace("去", " ")
+                    .replace("景点", " ")
+                    .replace("行程", " ")
+                    .replace("路线", " ")
+                    .replace("一下", " ")
+                    .trim();
+
+            if (!hasText(normalizedClause)) {
+                continue;
+            }
+
+            List<String> names = List.of(normalizedClause.split("[、,，和及 ]+")).stream()
+                    .map(String::trim)
+                    .filter(this::hasText)
+                    .toList();
+            if (names.isEmpty()) {
+                continue;
+            }
+            result.computeIfAbsent(day, ignored -> new ArrayList<>()).addAll(names);
+        }
+        return result;
+    }
+
+    private int parseChineseDayToken(String token) {
+        return switch (token) {
+            case "一", "1" -> 1;
+            case "二", "2" -> 2;
+            case "三", "3" -> 3;
+            case "四", "4" -> 4;
+            case "五", "5" -> 5;
+            case "六", "6" -> 6;
+            case "七", "7" -> 7;
+            default -> -1;
+        };
+    }
+
+    private Attraction removeAttractionFromOtherDays(List<DaySelection> selections, int targetDay, String normalizedName) {
+        for (DaySelection selection : selections) {
+            if (selection.day() == targetDay) {
+                continue;
+            }
+            for (int index = 0; index < selection.attractions().size(); index++) {
+                Attraction attraction = selection.attractions().get(index);
+                if (normalizeAttractionName(attraction.name()).equals(normalizedName)) {
+                    selection.attractions().remove(index);
+                    return attraction;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Attraction findFuzzyCandidate(Map<String, Attraction> candidateByName, String normalizedName) {
+        for (Map.Entry<String, Attraction> entry : candidateByName.entrySet()) {
+            if (entry.getKey().contains(normalizedName) || normalizedName.contains(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
     private PlanResponse buildPlanResponse(Long planId,
                                            Destination destination,
@@ -1013,13 +1168,16 @@ public class TravelPlanningService {
     }
 
     private double estimateDistance(List<Attraction> dayAttractions) {
-        if (dayAttractions.size() < 2) {
+        List<Attraction> validAttractions = dayAttractions.stream()
+                .filter(attraction -> hasValidCoordinates(attraction.latitude(), attraction.longitude()))
+                .toList();
+        if (validAttractions.size() < 2) {
             return 0;
         }
         double total = 0;
-        for (int index = 1; index < dayAttractions.size(); index++) {
-            Attraction previous = dayAttractions.get(index - 1);
-            Attraction current = dayAttractions.get(index);
+        for (int index = 1; index < validAttractions.size(); index++) {
+            Attraction previous = validAttractions.get(index - 1);
+            Attraction current = validAttractions.get(index);
             total += distance(previous.latitude(), previous.longitude(), current.latitude(), current.longitude());
         }
         return Math.round(total * 10.0) / 10.0;
@@ -1071,6 +1229,4 @@ public class TravelPlanningService {
     ) {
     }
 }
-
-
 

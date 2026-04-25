@@ -29,6 +29,42 @@ input {
   min-height: 100vh;
 }
 
+.home-page {
+  min-height: 100vh;
+}
+
+.site-record-footer {
+  display: grid;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 24px 22px;
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgba(238, 245, 242, 0.2) 0%, rgba(230, 240, 236, 0.9) 100%);
+  border-top: 1px solid rgba(199, 218, 212, 0.78);
+}
+
+.site-record-footer span {
+  color: #637773;
+  font-size: 14px;
+  font-style: italic;
+  letter-spacing: 0;
+}
+
+.site-record-footer a {
+  color: #126b62;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+
+.site-record-footer a:hover {
+  color: #0d524b;
+}
+
 .planner-panel {
   position: relative;
   display: flex;
@@ -193,13 +229,119 @@ input {
 }
 
 .planner-summary-card {
+  position: relative;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   padding: 18px;
+  overflow: hidden;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(214, 228, 223, 0.92);
-  box-shadow: 0 16px 32px rgba(22, 54, 50, 0.05);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 252, 250, 0.96) 100%);
+  border: 1px solid rgba(201, 222, 216, 0.95);
+  box-shadow: 0 18px 42px rgba(22, 54, 50, 0.08);
+}
+
+.quick-ai-form {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-ai-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.quick-ai-form :deep(.el-form-item__label) {
+  padding-bottom: 6px;
+  color: #5e736e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.quick-ai-form :deep(.el-autocomplete),
+.quick-ai-form :deep(.el-date-editor.el-input),
+.quick-ai-form :deep(.el-input),
+.quick-days-input {
+  width: 100%;
+}
+
+.quick-ai-form :deep(.el-input__wrapper) {
+  min-height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 1px rgba(200, 218, 213, 0.9) inset;
+}
+
+.quick-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quick-date-picker :deep(.el-input__wrapper),
+.quick-days-input :deep(.el-input__wrapper) {
+  min-height: 44px;
+}
+
+.quick-days-input :deep(.el-input-number__decrease),
+.quick-days-input :deep(.el-input-number__increase) {
+  border-color: rgba(200, 218, 213, 0.9);
+  background: rgba(246, 250, 249, 0.96);
+}
+
+.quick-interest-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.quick-interest-grid :deep(.el-checkbox-button__inner) {
+  min-width: 54px;
+  border: 1px solid rgba(204, 221, 216, 0.95);
+  border-radius: 999px !important;
+  color: #214b45;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: none;
+}
+
+.quick-interest-grid :deep(.el-checkbox-button.is-checked .el-checkbox-button__inner) {
+  color: #ffffff;
+  background: linear-gradient(135deg, #126b62 0%, #1d947d 100%);
+  border-color: transparent;
+}
+
+.quick-ai-submit {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #15916f 0%, #65bd36 100%) !important;
+  box-shadow: 0 14px 24px rgba(39, 142, 84, 0.22);
+}
+
+.quick-ai-submit:hover {
+  filter: brightness(1.02);
+}
+
+.quick-ai-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.quick-ai-actions :deep(.el-button) {
+  width: 100%;
+  margin-left: 0;
+}
+
+.quick-ai-stop {
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 800;
 }
 
 .planner-summary-head,
@@ -219,6 +361,11 @@ input {
 .planner-summary-head strong,
 .summary-row strong {
   color: #183640;
+}
+
+.planner-summary-head strong {
+  font-size: 22px;
+  letter-spacing: 0;
 }
 
 .summary-row {
@@ -294,7 +441,9 @@ input {
 
 .planner-dialog-footer {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 18px 18px;
 }
 
 .planner-form {
@@ -552,20 +701,27 @@ input {
 
 .main-content {
   display: grid;
-  grid-template-rows: minmax(380px, 47vh) auto;
+  grid-template-rows: auto auto;
   gap: 24px;
   padding: 24px;
 }
 
 .map-section {
+  position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
+  min-height: 380px;
+  height: clamp(380px, 47vh, 720px);
   overflow: hidden;
   border: 1px solid rgba(213, 225, 221, 0.94);
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.68);
   backdrop-filter: blur(14px);
   box-shadow: 0 20px 46px rgba(25, 55, 50, 0.08);
+}
+
+.map-section.fullscreen {
+  border-radius: 0;
 }
 
 .map-toolbar {
@@ -629,7 +785,63 @@ input {
 .map {
   width: 100%;
   height: 100%;
+  min-height: 0;
+}
+
+.map-stage {
+  position: relative;
+  isolation: isolate;
   min-height: 380px;
+  height: 100%;
+}
+
+.map-stage.fullscreen,
+.map-stage:fullscreen,
+.map-stage:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  max-width: none;
+  max-height: none;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.map-stage.fullscreen .map,
+.map-stage:fullscreen .map,
+.map-stage:-webkit-full-screen .map {
+  height: 100vh;
+  min-height: 100vh;
+}
+
+.map-fullscreen-btn {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9999;
+  min-height: 42px;
+  padding: 0 16px;
+  color: #ffffff;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(18, 107, 98, 0.96) 0%, rgba(28, 147, 122, 0.96) 100%);
+  box-shadow: 0 16px 28px rgba(17, 77, 69, 0.22);
+}
+
+.map-section.fullscreen .map-fullscreen-btn,
+.map-section:fullscreen .map-fullscreen-btn,
+.map-section:-webkit-full-screen .map-fullscreen-btn {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+}
+
+.map-fullscreen-btn:hover {
+  filter: brightness(1.03);
 }
 
 .content-grid {
@@ -1530,8 +1742,14 @@ input {
   }
 
   .main-content {
-    grid-template-rows: 340px auto;
+    grid-template-rows: auto auto;
     padding: 14px;
+  }
+
+  .map-section,
+  .map-stage {
+    height: 340px;
+    min-height: 340px;
   }
 
   .section-title,

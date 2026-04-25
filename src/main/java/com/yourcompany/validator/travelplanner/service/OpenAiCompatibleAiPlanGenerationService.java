@@ -12,6 +12,7 @@ import com.yourcompany.validator.travelplanner.model.Attraction;
 import com.yourcompany.validator.travelplanner.model.Destination;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -22,6 +23,7 @@ import org.springframework.web.client.RestClientResponseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.nio.charset.StandardCharsets;
 
 @Service
 public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGenerationService {
@@ -54,21 +56,9 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
 
         String responseBody;
         try {
-            responseBody = client.post()
-                    .uri("/chat/completions")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(objectMapper.writeValueAsString(payload))
-                    .retrieve()
-                    .body(String.class);
+            responseBody = executeChatCompletion(client, payload, "Failed to serialize AI request payload");
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to serialize AI request payload", exception);
-        } catch (RestClientResponseException exception) {
-            String body = exception.getResponseBodyAsString();
-            throw new IllegalStateException("AI provider error: " + exception.getStatusCode()
-                    + (StringUtils.hasText(body) ? " - " + body : ""));
-        } catch (RestClientException exception) {
-            throw new IllegalStateException("Failed to call AI provider: " + exception.getMessage(), exception);
         }
 
         ChatCompletionResponse response;
@@ -113,21 +103,9 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
 
         String responseBody;
         try {
-            responseBody = client.post()
-                    .uri("/chat/completions")
-                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(objectMapper.writeValueAsString(payload))
-                    .retrieve()
-                    .body(String.class);
+            responseBody = executeChatCompletion(client, payload, "Failed to serialize AI optimize payload");
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Failed to serialize AI optimize payload", exception);
-        } catch (RestClientResponseException exception) {
-            String body = exception.getResponseBodyAsString();
-            throw new IllegalStateException("AI provider error: " + exception.getStatusCode()
-                    + (StringUtils.hasText(body) ? " - " + body : ""));
-        } catch (RestClientException exception) {
-            throw new IllegalStateException("Failed to call AI provider: " + exception.getMessage(), exception);
         }
 
         try {
@@ -141,7 +119,7 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
             }
             return objectMapper.readValue(extractJson(content), AiPlanDraft.class);
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Failed to parse AI optimization JSON", exception);
+            throw new IllegalStateException("Failed to parse AI optimization JSON: " + safeSnippet(responseBody), exception);
         }
     }
 
@@ -170,6 +148,36 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
                 .requestFactory(requestFactory)
                 .baseUrl(trimTrailingSlash(properties.getBaseUrl()))
                 .build();
+    }
+
+    private String executeChatCompletion(RestClient client,
+                                         ChatCompletionRequest payload,
+                                         String serializationErrorMessage) throws JsonProcessingException {
+        try {
+            return client.post()
+                    .uri("/chat/completions")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + properties.getApiKey())
+                    .header(HttpHeaders.ACCEPT, "*/*")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(objectMapper.writeValueAsString(payload))
+                    .exchange((request, response) -> readResponseBody(response));
+        } catch (RestClientResponseException exception) {
+            String body = exception.getResponseBodyAsString();
+            throw new IllegalStateException("AI provider error: " + exception.getStatusCode()
+                    + (StringUtils.hasText(body) ? " - " + body : ""));
+        } catch (RestClientException exception) {
+            throw new IllegalStateException("Failed to call AI provider: " + exception.getMessage(), exception);
+        }
+    }
+
+    private String readResponseBody(ClientHttpResponse response) throws java.io.IOException {
+        byte[] bodyBytes = response.getBody().readAllBytes();
+        String body = new String(bodyBytes, StandardCharsets.UTF_8);
+        if (response.getStatusCode().isError()) {
+            throw new IllegalStateException("AI provider error: " + response.getStatusCode()
+                    + (StringUtils.hasText(body) ? " - " + body : ""));
+        }
+        return body;
     }
 
     private String buildSystemPrompt(int days, boolean hasLocalCandidates) {
@@ -285,13 +293,54 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
 
     private String buildOptimizeSystemPrompt(int days) {
         return """
-                You are refining an existing travel plan.
-                Return JSON only and follow the exact same schema as the normal planner.
-                All user-facing text must be Simplified Chinese.
-                Keep the destination city consistent, keep the trip length exactly %d days,
-                and prioritize the attractions already present in the current plan.
-                You may reorder attractions across days, improve titles/themes, and balance the pace.
-                Do not invent generic placeholder spots. If candidate attractions are provided, use them as the factual basis.
+                你是一个旅行行程优化助手。
+                只返回 JSON，不要输出 Markdown，不要输出解释，不要输出 JSON 之外的任何文本。
+                返回结构必须与普通 AI 规划完全一致：
+                {
+                  "title": "string",
+                  "summary": "string",
+                  "destination": {
+                    "city": "string",
+                    "country": "string",
+                    "latitude": 0,
+                    "longitude": 0,
+                    "bestSeason": "string",
+                    "summary": "string"
+                  },
+                  "days": [
+                    {
+                      "day": 1,
+                      "title": "string",
+                      "theme": "string",
+                      "attractionIds": [1, 2, 3],
+                      "attractionNames": ["string"],
+                      "attractions": [
+                        {
+                          "id": 1,
+                          "name": "string",
+                          "city": "string",
+                          "category": "string",
+                          "description": "string",
+                          "latitude": 0,
+                          "longitude": 0,
+                          "rating": 4.6,
+                          "suggestedHours": 2,
+                          "tags": ["string"]
+                        }
+                      ]
+                    }
+                  ]
+                }
+
+                优化规则：
+                - 所有面向用户展示的文案必须使用简体中文。
+                - 目的地城市必须保持不变。
+                - 必须严格输出 %d 天行程。
+                - 优先使用当前行程与候选景点，不要编造与城市无关的泛化景点。
+                - 可以重排行程顺序、调整每日主题、优化节奏与动线。
+                - 如果用户在 instruction 中明确指定“第几天新增/加入/安排某个景点”，必须严格遵守，不能把该景点放到其他天。
+                - 如果当前计划中的 attractionIds 缺失，可以补 attractionNames 或 attractions。
+                - 输出必须是严格合法的 JSON。
                 """.formatted(days);
     }
 
@@ -312,15 +361,16 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
             optimizationContext.put("candidateAttractions", candidates);
 
             return """
-                    Refine the following trip plan.
-                    Requirements:
-                    1. Preserve the same destination city.
-                    2. Use Simplified Chinese for all displayed text.
-                    3. Keep the itinerary to exactly %d days.
-                    4. Prefer the provided attractions and optimize ordering, pacing, and daily themes.
-                    5. Make the itinerary easier to follow on a map and for real travel.
+                    请优化下面这份已有行程。
+                    目标：
+                    1. 保持同一个目的地城市不变。
+                    2. 所有展示文案使用简体中文。
+                    3. 严格保持 %d 天行程。
+                    4. 优先使用已有景点和候选景点，优化顺序、节奏与每日主题。
+                    5. 让路线更适合真实出行和地图展示。
+                    6. 如果 instruction 里明确写了“第几天新增某景点”，必须把该景点放到对应那一天。
 
-                    Data:
+                    输入数据：
                     %s
                     """.formatted(days, objectMapper.writeValueAsString(optimizationContext));
         } catch (JsonProcessingException exception) {
@@ -352,6 +402,14 @@ public class OpenAiCompatibleAiPlanGenerationService implements AiPlanGeneration
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    private String safeSnippet(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "<empty>";
+        }
+        String normalized = value.replaceAll("\\s+", " ").trim();
+        return normalized.length() <= 600 ? normalized : normalized.substring(0, 600) + "...";
     }
 
     private record ChatCompletionRequest(

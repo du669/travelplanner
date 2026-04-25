@@ -1,4 +1,5 @@
 <template>
+  <div class="home-page">
   <el-container class="app-shell">
     <el-aside width="360px" class="planner-panel">
       <div class="brand">
@@ -21,23 +22,80 @@
 
       <section class="planner-summary-card">
         <div class="planner-summary-head">
-          <div>
-            <small>当前模式</small>
-            <strong>{{ currentModeLabel }}</strong>
+          <strong>AI 规划</strong>
+        </div>
+
+        <el-form label-position="top" class="quick-ai-form">
+          <el-form-item label="目的地" class="quick-field">
+            <el-autocomplete
+              v-model="form.city"
+              :fetch-suggestions="queryDestinations"
+              clearable
+              placeholder="例如：上海、北京、东京"
+              @select="handleDestinationSelect"
+            >
+              <template #default="{ item }">
+                <div class="destination-option">
+                  <span>{{ item.city }}</span>
+                  <small>{{ item.country }}</small>
+                </div>
+              </template>
+            </el-autocomplete>
+          </el-form-item>
+
+          <div class="quick-inline-grid">
+          <el-form-item label="开始日期" class="quick-field">
+            <el-date-picker
+              v-model="form.startDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              format="YYYY/MM/DD"
+              :clearable="false"
+              class="quick-date-picker"
+              @change="handleStartDateChange"
+            />
+          </el-form-item>
+
+          <el-form-item label="游玩天数" class="quick-field">
+            <el-input-number
+              :min="1"
+              :max="7"
+              :model-value="form.days"
+              class="quick-days-input"
+              controls-position="right"
+              @change="handleDaysChange"
+            />
+          </el-form-item>
           </div>
-          <el-button text type="primary" @click="plannerDialogVisible = true">设置</el-button>
-        </div>
-        <div class="summary-row">
-          <span>目的地</span>
-          <strong>{{ form.city || '未设置' }}</strong>
-        </div>
-        <div class="summary-row">
-          <span>开始日期</span>
-          <strong>{{ formatDateLabel(form.startDate) }}</strong>
-        </div>
-        <div class="summary-row">
-          <span>总天数</span>
-          <strong>{{ form.days }} 天</strong>
+
+          <el-form-item label="兴趣偏好" class="quick-field">
+            <el-checkbox-group v-model="form.interests" class="quick-interest-grid">
+              <el-checkbox-button v-for="interest in quickInterests" :key="interest.value" :value="interest.value">
+                {{ interest.label }}
+              </el-checkbox-button>
+            </el-checkbox-group>
+          </el-form-item>
+        </el-form>
+
+        <div class="quick-ai-actions">
+          <el-button
+            type="success"
+            class="quick-ai-submit"
+            :loading="activeLoadingMode === 'ai'"
+            @click="generateAiPlan"
+          >
+            开始 AI 规划
+          </el-button>
+
+          <el-button
+            v-if="activeLoadingMode === 'ai'"
+            class="quick-ai-stop"
+            type="danger"
+            plain
+            @click="stopAiGeneration"
+          >
+            停止 AI 生成
+          </el-button>
         </div>
       </section>
 
@@ -152,26 +210,24 @@
             </div>
           </section>
         </el-form>
+
+        <template #footer>
+          <div class="planner-dialog-footer">
+            <el-button @click="plannerDialogVisible = false">取消</el-button>
+            <el-button type="primary" @click="confirmPlannerDialog">确认设置</el-button>
+          </div>
+        </template>
       </el-dialog>
 
       <div class="action-group compact-actions">
-        <el-button type="primary" class="full-width" @click="plannerDialogVisible = true">调整设置</el-button>
+        <el-button type="primary" class="full-width" @click="openStandardPlannerDialog">普通规划设置</el-button>
         <el-button
-          :type="planMode === 'ai' ? 'success' : 'primary'"
+          type="primary"
           class="full-width"
-          :loading="loading"
-          @click="planMode === 'ai' ? generateAiPlan() : generateStandardPlan()"
+          :loading="activeLoadingMode === 'standard'"
+          @click="generateStandardPlan"
         >
-          {{ planMode === 'ai' ? '开始 AI 规划' : '生成普通规划' }}
-        </el-button>
-        <el-button
-          v-if="planMode === 'ai' && loading"
-          class="full-width"
-          type="danger"
-          plain
-          @click="stopAiGeneration"
-        >
-          停止 AI 生成
+          生成普通规划
         </el-button>
       </div>
 
@@ -199,43 +255,49 @@
 
     <el-container>
       <el-main class="main-content">
-        <section class="map-section">
-          <div class="map-toolbar" v-if="displayPlan">
-            <div class="map-toolbar-group">
-              <span class="map-toolbar-label">地图视图</span>
-              <div class="map-filter-chips">
-                <button class="map-chip" :class="{ active: activeDayFilter === 'all' }" @click="setActiveDay('all')">
-                  全部天数
-                </button>
-                <button
-                  v-for="day in displayPlan.itinerary"
-                  :key="`map-day-${day.day}`"
-                  class="map-chip"
-                  :class="{ active: activeDayFilter === day.day }"
-                  @click="setActiveDay(day.day)"
-                >
-                  第 {{ day.day }} 天
-                </button>
+        <section ref="mapSectionRef" class="map-section" :class="{ fullscreen: isMapFullscreen }">
+            <div class="map-toolbar" v-if="displayPlan">
+              <div class="map-toolbar-group">
+                <span class="map-toolbar-label">地图视图</span>
+                <div class="map-filter-chips">
+                  <button class="map-chip" :class="{ active: activeDayFilter === 'all' }" @click="setActiveDay('all')">
+                    全部天数
+                  </button>
+                  <button
+                    v-for="day in displayPlan.itinerary"
+                    :key="`map-day-${day.day}`"
+                    class="map-chip"
+                    :class="{ active: activeDayFilter === day.day }"
+                    @click="setActiveDay(day.day)"
+                  >
+                    第 {{ day.day }} 天
+                  </button>
+                </div>
+              </div>
+
+              <div class="map-toolbar-group">
+                <span class="map-toolbar-label">地图风格</span>
+                <el-segmented v-model="mapTheme" :options="mapThemeOptions" size="small" />
+              </div>
+
+              <div class="map-toolbar-group" v-if="activeRouteSummary">
+                <span class="map-toolbar-label">路线概览</span>
+                <div class="map-toolbar-metric">{{ activeRouteSummary.distanceText }} · {{ activeRouteSummary.durationText }}</div>
+              </div>
+
+              <div class="map-toolbar-group map-action-group">
+                <el-button plain @click="openEditorPage" :disabled="loading || !plan?.planId">编辑行程</el-button>
+                <el-button plain @click="exportPlanAsImage('jpg')" :disabled="!displayPlan || exportLoading">导出 JPG</el-button>
+                <el-button plain @click="exportPlanAsPdf" :disabled="!displayPlan || exportLoading">导出 PDF</el-button>
               </div>
             </div>
 
-            <div class="map-toolbar-group">
-              <span class="map-toolbar-label">地图风格</span>
-              <el-segmented v-model="mapTheme" :options="mapThemeOptions" size="small" />
+            <div ref="mapStageRef" class="map-stage" :class="{ fullscreen: isMapFullscreen }">
+              <div id="map" class="map"></div>
             </div>
-
-            <div class="map-toolbar-group" v-if="activeRouteSummary">
-              <span class="map-toolbar-label">路线概览</span>
-              <div class="map-toolbar-metric">{{ activeRouteSummary.distanceText }} · {{ activeRouteSummary.durationText }}</div>
-            </div>
-
-            <div class="map-toolbar-group map-action-group">
-              <el-button plain @click="openEditorPage" :disabled="loading || !plan?.planId">编辑行程</el-button>
-              <el-button plain @click="exportPlanAsImage('jpg')" :disabled="!displayPlan || exportLoading">导出 JPG</el-button>
-              <el-button plain @click="exportPlanAsPdf" :disabled="!displayPlan || exportLoading">导出 PDF</el-button>
-            </div>
-          </div>
-          <div id="map" class="map"></div>
+            <button class="map-fullscreen-btn" type="button" @click="toggleMapFullscreen">
+              {{ isMapFullscreen ? '退出全屏' : '全屏查看' }}
+            </button>
         </section>
 
         <section class="content-grid">
@@ -287,7 +349,7 @@
                         <div class="drag-label">拖动可调整整天顺序</div>
                         <h3>{{ day.title }}</h3>
                         <div class="day-date-chip">{{ getDateForDay(day.day) }}</div>
-                        <p>{{ day.theme }} · 景点 {{ day.attractions.length }} 个 · 概览 {{ formatDistanceKm(day.distanceKm) }}</p>
+                        <p>{{ day.theme }} · 景点 {{ day.attractions.length }} 个 · 概览 {{ getDayDistanceText(day.day, day) }}</p>
                       </div>
                       <el-tag round type="success">{{ getDayRouteMeta(day.day)?.distanceText || '待估算' }}</el-tag>
                     </div>
@@ -445,10 +507,15 @@
       </el-main>
     </el-container>
   </el-container>
+  <footer class="site-record-footer">
+    <span>@2026 DJL&ZJC</span>
+    <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">辽ICP备2025071101号-2</a>
+  </footer>
+  </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import {
@@ -470,6 +537,7 @@ const routeData = ref(null)
 const previewRouteData = ref(null)
 const savedPlans = ref([])
 const loading = ref(false)
+const activeLoadingMode = ref('')
 const errorMessage = ref('')
 const plannerDialogVisible = ref(false)
 const planMode = ref('ai')
@@ -478,9 +546,12 @@ const map = ref(null)
 const mapReady = ref(false)
 const mapOverlays = ref([])
 const infoWindow = ref(null)
+const mapSectionRef = ref(null)
+const mapStageRef = ref(null)
 const supportedCitiesText = ref('')
 const activeDayFilter = ref('all')
 const mapTheme = ref('normal')
+const isMapFullscreen = ref(false)
 const previewMessage = ref('')
 const previewProgress = ref(0)
 const brokenImages = ref({})
@@ -509,6 +580,8 @@ const interests = [
   { label: '亲子', value: 'family' },
   { label: '博物馆', value: 'museum' }
 ]
+
+const quickInterests = interests.slice(0, 8)
 
 const planModeOptions = [
   { label: 'AI 规划', value: 'ai' },
@@ -681,6 +754,14 @@ const getDayRouteMeta = (dayNumber) => {
 }
 
 const activeDayRouteMeta = computed(() => getDayRouteMeta(detailDayNumber.value))
+
+const getDayDistanceText = (dayNumber, day) => {
+  const routeMeta = getDayRouteMeta(dayNumber)
+  if (routeMeta?.distanceText) {
+    return routeMeta.distanceText
+  }
+  return formatDistanceKm(day?.distanceKm || 0)
+}
 
 const activeRouteSummary = computed(() => {
   const routes = displayRouteData.value?.days?.filter((route) => activeDayFilter.value === 'all' || route.day === activeDayFilter.value) || []
@@ -969,7 +1050,7 @@ const buildEditDraftPayload = (planLike) => ({
     distanceKm: day.distanceKm || 0,
     attractions: (day.attractions || []).map((attraction, attractionIndex) => ({
       ...attraction,
-      id: attraction.id ?? `home-${day.day}-${attractionIndex}-${Date.now()}`
+      id: attraction.id ?? -(Date.now() + day.day * 100 + attractionIndex)
     }))
   }))
 })
@@ -1016,7 +1097,7 @@ const loadRoutes = async (planId) => {
 }
 
 const stopAiGeneration = () => {
-  if (!loading.value || planMode.value !== 'ai') return
+  if (activeLoadingMode.value !== 'ai') return
   aiAbortController.value?.abort()
 }
 
@@ -1029,6 +1110,7 @@ const runPlanRequest = async (mode = planMode.value) => {
   }
   syncDerivedDates()
   loading.value = true
+  activeLoadingMode.value = mode
   errorMessage.value = ''
   activeDayFilter.value = 'all'
   brokenImages.value = {}
@@ -1104,11 +1186,28 @@ const runPlanRequest = async (mode = planMode.value) => {
   } finally {
     aiAbortController.value = null
     loading.value = false
+    activeLoadingMode.value = ''
   }
 }
 
-const generateStandardPlan = async () => runPlanRequest('standard')
-const generateAiPlan = async () => runPlanRequest('ai')
+const generateStandardPlan = async () => {
+  planMode.value = 'standard'
+  await runPlanRequest('standard')
+}
+const generateAiPlan = async () => {
+  planMode.value = 'ai'
+  await runPlanRequest('ai')
+}
+
+const openStandardPlannerDialog = () => {
+  planMode.value = 'standard'
+  plannerDialogVisible.value = true
+}
+
+const confirmPlannerDialog = () => {
+  syncDerivedDates()
+  plannerDialogVisible.value = false
+}
 
 const loadSavedPlan = async (id) => {
   loading.value = true
@@ -1172,6 +1271,19 @@ const initMap = async () => {
   map.value.addControl(new AMap.ToolBar())
   infoWindow.value = new AMap.InfoWindow({ offset: new AMap.Pixel(0, -24) })
   mapReady.value = true
+}
+
+const resizeMapViewport = () => {
+  ;[80, 220, 420].forEach((delay) => {
+    window.setTimeout(() => {
+      if (!map.value) return
+      map.value.resize()
+      const focusPoint = getMapFocusPoint() || getPlanCenter(displayPlan.value)
+      if (hasValidCoordinates(focusPoint)) {
+        map.value.setZoomAndCenter(map.value.getZoom(), [Number(focusPoint.longitude), Number(focusPoint.latitude)], true)
+      }
+    }, delay)
+  })
 }
 
 const animateMapTo = (point, zoom = 12) => {
@@ -1326,6 +1438,28 @@ const openEditorPage = () => {
   window.open(`/editor.html?planId=${plan.value.planId}`, '_blank', 'noopener')
 }
 
+const syncMapFullscreenState = () => {
+  isMapFullscreen.value = Boolean(mapStageRef.value && document.fullscreenElement === mapStageRef.value)
+  resizeMapViewport()
+}
+
+const toggleMapFullscreen = async () => {
+  const target = mapStageRef.value
+  if (!target) return
+  try {
+    if (document.fullscreenElement === target) {
+      await document.exitFullscreen()
+    } else {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      }
+      await target.requestFullscreen()
+    }
+  } catch (error) {
+    errorMessage.value = normalizeRequestError(error)
+  }
+}
+
 const exportCanvas = async () => {
   if (!exportSurfaceRef.value) throw new Error('暂无可导出的行程内容')
   return html2canvas(exportSurfaceRef.value, {
@@ -1377,9 +1511,11 @@ const exportPlanAsPdf = async () => {
 
 onMounted(async () => {
   syncDerivedDates()
+  document.addEventListener('fullscreenchange', syncMapFullscreenState)
   try {
     mapConfig.value = await getMapConfig()
     await initMap()
+    resizeMapViewport()
   } catch (error) {
     errorMessage.value = normalizeRequestError(error)
   }
@@ -1391,6 +1527,10 @@ onMounted(async () => {
   } catch (error) {
     errorMessage.value = normalizeRequestError(error)
   }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', syncMapFullscreenState)
 })
 
 watch(() => [form.startDate, form.days], syncDerivedDates, { immediate: true })

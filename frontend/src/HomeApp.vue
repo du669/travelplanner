@@ -509,7 +509,7 @@
   </el-container>
   <footer class="site-record-footer">
     <span>@2026 DJL&ZJC</span>
-    <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">辽ICP备2025071101号-2</a>
+    <a href="https://beian.miit.gov.cn" target="_blank" rel="noopener noreferrer">辽ICP备2025071101号-1</a>
   </footer>
   </div>
 </template>

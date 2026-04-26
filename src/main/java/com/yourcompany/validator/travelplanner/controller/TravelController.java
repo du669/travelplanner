@@ -29,7 +29,13 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(originPatterns = {"http://localhost:*", "http://127.0.0.1:*"})
+@CrossOrigin(originPatterns = {
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "https://trip.lemonice.cn",
+        "https://*.lemonice.cn",
+        "http://*.lemonice.cn"
+})
 public class TravelController {
     private final TravelPlanningService travelPlanningService;
     private final AmapRoutingService amapRoutingService;

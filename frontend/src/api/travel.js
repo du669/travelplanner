@@ -52,12 +52,19 @@ const streamPlanEvents = async (endpoint, payload, handlers = {}, options = {}) 
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
   let currentEvent = 'message'
+  let terminalComplete = false
+  let terminalError = null
 
   const emit = (eventName, data) => {
     if (eventName === 'preview') handlers.onPreview?.(data)
     else if (eventName === 'status') handlers.onStatus?.(data)
-    else if (eventName === 'complete') handlers.onComplete?.(data)
-    else if (eventName === 'error') handlers.onError?.(data)
+    else if (eventName === 'complete') {
+      terminalComplete = true
+      handlers.onComplete?.(data)
+    } else if (eventName === 'error') {
+      terminalError = data
+      handlers.onError?.(data)
+    }
   }
 
   while (true) {
@@ -87,6 +94,14 @@ const streamPlanEvents = async (endpoint, payload, handlers = {}, options = {}) 
         console.error('Failed to parse stream chunk', error)
       }
     }
+  }
+
+  if (terminalError) {
+    throw new Error(terminalError.message || '生成行程失败，请稍后重试。')
+  }
+
+  if (!terminalComplete) {
+    throw new Error('生成过程意外中断，请稍后重试。')
   }
 }
 

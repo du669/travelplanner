@@ -1144,6 +1144,9 @@ const runPlanRequest = async (mode = planMode.value) => {
             clearPreview()
             await loadRoutes(event.plan.planId)
             savedPlans.value = await getSavedPlans()
+          },
+          onError: (event) => {
+            errorMessage.value = event?.message || 'AI 规划失败，请稍后重试。'
           }
         },
         { signal: aiAbortController.value.signal }
@@ -1168,6 +1171,9 @@ const runPlanRequest = async (mode = planMode.value) => {
           clearPreview()
           await loadRoutes(event.plan.planId)
           savedPlans.value = await getSavedPlans()
+        },
+        onError: (event) => {
+          errorMessage.value = event?.message || '普通规划生成失败，请稍后重试。'
         }
       })
     }
